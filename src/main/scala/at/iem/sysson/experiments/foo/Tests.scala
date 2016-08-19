@@ -37,7 +37,7 @@
       object Result extends LowPri {
         implicit def GERes: Result[GE, IfGE] = ???
       }
-      sealed trait Result[A, Out]
+      sealed trait Result[-A, Out]
     }
     trait ElseBuilder[A] {
       def apply[B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out

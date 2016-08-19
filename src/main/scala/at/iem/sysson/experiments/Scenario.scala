@@ -23,21 +23,21 @@ object Scenario {
 
       // ---- GE result ----
 
-//      val res0: GE = If (freq > 100) Then {
-//        SinOsc.ar(freq)
-//      } Else {
-//        WhiteNoise.ar
-//      }
+      val res0: GE = If (freq > 100) Then {
+        SinOsc.ar(freq)
+      } Else {
+        WhiteNoise.ar
+      }
 
-//      val res1: GE = If (freq > 1000) Then {
-//        SinOsc.ar(freq)
-//      } ElseIf (freq > 100) Then {
-//        Dust.ar(freq)
-//      } Else {
-//        WhiteNoise.ar
-//      }
+      val res1: GE = If (freq > 1000) Then {
+        SinOsc.ar(freq)
+      } ElseIf (freq > 100) Then {
+        Dust.ar(freq)
+      } Else {
+        WhiteNoise.ar
+      }
 
-//      Out.ar(0, res0)
+      Out.ar(0, res0)
     }
 
 //    val sd = SynthDef("test")(sg.expand)

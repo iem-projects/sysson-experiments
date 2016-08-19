@@ -86,7 +86,7 @@ object ElseBuilder {
   object Result extends LowPri {
     implicit def GE: Result[synth.GE, IfGE] = ???
   }
-  sealed trait Result[A, Out /* <: If[A] */]
+  sealed trait Result[-A, Out /* <: If[A] */]
 }
 trait ElseBuilder[A] {
   def apply[B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
