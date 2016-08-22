@@ -44,17 +44,23 @@ object Scenario {
         WhiteNoise.ar
       }
 
-      Out.ar(0, res0 * amp)
+      Out.ar(0, Pan2.ar(res0 * amp))
     }
 
     val ug = sg2.expand(SysSonUGenGraphBuilder)
-    println(ug)
 
-//    val sd = SynthDef("test")(sg.expand)
-//
-//    import Ops._
-//    Server.run { _ =>
-//      sd.play(args = ???)
-//    }
+    val sd = SynthDef("test", ug)
+
+    import Ops._
+    Server.run { s =>
+      val syn = sd.play(args = List("freq" -> 0))
+      Thread.sleep(2000)
+      syn.set("freq" -> 101)
+      Thread.sleep(2000)
+      syn.set("freq" -> 1001)
+      Thread.sleep(2000)
+      s.quit()
+      sys.exit()
+    }
   }
 }

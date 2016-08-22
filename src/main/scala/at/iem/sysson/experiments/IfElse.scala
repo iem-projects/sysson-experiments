@@ -1,8 +1,8 @@
 package at.iem.sysson.experiments
 
-import at.iem.sysson.experiments.impl.IfBuilderImpl
 import de.sciss.synth
 import de.sciss.synth.GE
+import de.sciss.synth.ugen.impl.IfBuilderImpl
 
 import scala.language.implicitConversions
 

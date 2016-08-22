@@ -1,7 +1,8 @@
-package at.iem.sysson.experiments
-package impl
+package de.sciss.synth.ugen.impl
 
-import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, UGenInLike}
+import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, If, IfBuilder}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, UnaryOpUGen}
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, UGenGraph, UGenInLike, UndefinedRate}
 
 object IfBuilderImpl {
   def apply(cond: /* => */ GE): IfBuilder = new IfBuilderImpl(/* () => */ cond)
@@ -58,16 +59,33 @@ final class IfImpl[A](protected val cases: List[IfCase[A]]) extends IfImplLike[A
 
 //final class IfCase[+A](val cond: () => GE, branch: () => A)
 
-final case class IfCase[+A](cond: /* () => */ GE, branch: SynthGraph /* () => A */)(val re: A)
+final case class IfCase[+A](cond: /* () => */ GE, branch: SynthGraph /* () => A */)(val res: A)
 
 final case class IfUnitImpl(cases: List[IfCase[Any]]) extends /* with IfGE */ Lazy.Expander[Unit] {
-  def rate: MaybeRate = ???
+  def rate: MaybeRate = UndefinedRate // XXX TODO -- ok?
 
   protected def makeUGens: Unit = ???
 }
 
 final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
-  def rate: MaybeRate = ???
+  def rate: MaybeRate = MaybeRate.max_?(cases.map(_.res.rate): _*)
 
-  protected def makeUGens: UGenInLike = ???
+  protected def makeUGens: UGenInLike = {
+    val (_, res) = ((1: GE, 0: GE) /: cases) { case ((condAcc, resAcc), c) =>
+      val bg = c.branch
+      bg.sources.foreach { lz =>
+        lz.force(UGenGraph.builder)
+      }
+      val condNext: GE = condAcc match {
+        case Constant(1)  => c.cond
+        case cPrev        => UnaryOpUGen.Not.make(cPrev) & c.cond
+      }
+      val resNext: GE = resAcc match {
+        case Constant(0)  => c.res
+        case resPrev      => BinaryOpUGen.Plus.make(resPrev, condNext * c.res)  // XXX TODO --- WTF `+` does not work
+      }
+      (condNext, resNext)
+    }
+    res
+  }
 }
