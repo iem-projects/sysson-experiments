@@ -62,7 +62,7 @@ import scala.language.implicitConversions
  */
 
 object If {
-  def apply(cond: => GE): IfBuilder = IfBuilderImpl(cond)
+  def apply(cond: /* => */ GE): IfBuilder = IfBuilderImpl(cond)
 
 //  implicit def result[A](x: If[A]): A = ...
 }
@@ -75,7 +75,7 @@ trait IfBuilder {
 
 trait If[A] {
   def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
-  def ElseIf (cond: => GE): ElseIfBuilder[A]
+  def ElseIf (cond: /* => */ GE): ElseIfBuilder[A]
 }
 
 trait IfGE extends If[GE] with GE
