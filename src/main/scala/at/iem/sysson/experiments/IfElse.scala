@@ -1,5 +1,6 @@
 package at.iem.sysson.experiments
 
+import at.iem.sysson.experiments.impl.IfBuilderImpl
 import de.sciss.synth
 import de.sciss.synth.GE
 
@@ -61,9 +62,9 @@ import scala.language.implicitConversions
  */
 
 object If {
-  def apply(cond: => GE): IfBuilder = ???
+  def apply(cond: => GE): IfBuilder = IfBuilderImpl(cond)
 
-//  implicit def result[A](x: If[A]): A = ???
+//  implicit def result[A](x: If[A]): A = ...
 }
 
 trait IfBuilder {
@@ -73,23 +74,25 @@ trait IfBuilder {
 }
 
 trait If[A] {
-  def Else: ElseBuilder[A]
-  def ElseIf(cond: => GE): ElseIfBuilder[A]
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
+  def ElseIf (cond: => GE): ElseIfBuilder[A]
 }
 
 trait IfGE extends If[GE] with GE
 
 object ElseBuilder {
-  trait LowPri {
-    implicit def Unit[A]: Result[A, If[A]] = ???
-  }
   object Result extends LowPri {
-    implicit def GE: Result[synth.GE, IfGE] = ???
+    implicit def GE: ElseBuilder.GE.type = ElseBuilder.GE
   }
-  sealed trait Result[-A, Out /* <: If[A] */]
-}
-trait ElseBuilder[A] {
-  def apply[B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
+  sealed trait Result[-A, Out]
+
+  object GE           extends Result[synth.GE, IfGE ]
+  final class Unit[A] extends Result[A       , If[A]]
+
+  trait LowPri {
+    implicit def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]
+    private final val instance = new Unit[Any]
+  }
 }
 
 trait ElseIfBuilder[A] {
@@ -97,20 +100,3 @@ trait ElseIfBuilder[A] {
 
   // def apply[B >: A](branch: => B): If[B] = Then(branch)
 }
-
-//object If {
-//  def ir(cond: GE): If = new If(cond)
-//}
-//final case class If(cond: GE) extends GE.Lazy  {
-//
-//  def rate: MaybeRate = ???
-//
-//  protected def makeUGens: UGenInLike = {
-//    val numChannels: Int = ???
-//    val dc = DC.ar(0)
-//    val ge: GE = if (numChannels == 1) dc else Seq.fill(numChannels)(dc)
-//    ge
-//  }
-//
-//  def Else
-//}

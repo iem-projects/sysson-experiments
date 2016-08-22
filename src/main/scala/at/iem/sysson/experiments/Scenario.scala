@@ -5,8 +5,8 @@ import ugen._
 
 object Scenario {
   def main(args: Array[String]): Unit = {
-    val sg = SynthGraph {
-      val amp: GE = ???
+    lazy val sg1 = SynthGraph {
+      val amp : GE = "amp".kr
       val freq: GE = "freq".kr
 
       // ---- Unit result ----
@@ -29,7 +29,14 @@ object Scenario {
         WhiteNoise.ar
       }
 
-      val res1: GE = If (freq > 1000) Then {
+      Out.ar(0, res0 * amp)
+    }
+
+    val sg2 = SynthGraph {
+      val amp : GE = "amp".kr
+      val freq: GE = "freq".kr
+
+      val res0: GE = If (freq > 1000) Then {
         SinOsc.ar(freq)
       } ElseIf (freq > 100) Then {
         Dust.ar(freq)
@@ -37,8 +44,11 @@ object Scenario {
         WhiteNoise.ar
       }
 
-      Out.ar(0, res0)
+      Out.ar(0, res0 * amp)
     }
+
+    val ug = sg2.expand(SysSonUGenGraphBuilder)
+    println(ug)
 
 //    val sd = SynthDef("test")(sg.expand)
 //
