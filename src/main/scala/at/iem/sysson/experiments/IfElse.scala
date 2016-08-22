@@ -78,7 +78,7 @@ trait If[A] {
   def ElseIf (cond: /* => */ GE): ElseIfBuilder[A]
 }
 
-trait IfGE extends If[GE] with GE
+//trait IfGE extends If[GE] with GE
 
 object ElseBuilder {
   object Result extends LowPri {
@@ -86,8 +86,8 @@ object ElseBuilder {
   }
   sealed trait Result[-A, Out]
 
-  object GE           extends Result[synth.GE, IfGE ]
-  final class Unit[A] extends Result[A       , If[A]]
+  object GE           extends Result[synth.GE, synth.GE /* IfGE */]
+  final class Unit[A] extends Result[A       , scala.Unit /* If[A] */]
 
   trait LowPri {
     implicit def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]

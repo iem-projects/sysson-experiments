@@ -1,7 +1,7 @@
 package at.iem.sysson.experiments
 package impl
 
-import de.sciss.synth.{GE, MaybeRate, SynthGraph, UGenInLike}
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, UGenInLike}
 
 object IfBuilderImpl {
   def apply(cond: /* => */ GE): IfBuilder = new IfBuilderImpl(/* () => */ cond)
@@ -39,9 +39,16 @@ trait IfImplLike[A] extends If[A] {
 
   protected def cases: List[IfCase[A]]
 
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = result match {
-    case    ElseBuilder.GE      => new IfGEImpl(???)
-    case _: ElseBuilder.Unit[_] => ???
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = {
+    val c = IfBuilderImpl.mkCase(1, branch) // XXX TODO --- cheesy way of a `true always` condition?
+    result match {
+      case ElseBuilder.GE =>
+        IfGEImpl((cases :+ c).asInstanceOf[List[IfCase[GE]]]) // XXX TODO --- how to remove the cast?
+
+      case _: ElseBuilder.Unit[_] =>
+        IfUnitImpl(cases :+ c)
+        ()
+    }
   }
 
   def ElseIf(cond: /* => */ GE): ElseIfBuilder[A] = new ElseIfBuilderImpl(cases, /* () => */ cond)
@@ -53,14 +60,14 @@ final class IfImpl[A](protected val cases: List[IfCase[A]]) extends IfImplLike[A
 
 final case class IfCase[+A](cond: /* () => */ GE, branch: SynthGraph /* () => A */)(val re: A)
 
-final class IfGEImpl(protected val cases: List[IfCase[GE]]) extends IfImplLike[GE] with IfGE with GE.Lazy {
+final case class IfUnitImpl(cases: List[IfCase[Any]]) extends /* with IfGE */ Lazy.Expander[Unit] {
+  def rate: MaybeRate = ???
+
+  protected def makeUGens: Unit = ???
+}
+
+final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
   def rate: MaybeRate = ???
 
   protected def makeUGens: UGenInLike = ???
-
-  def productElement(n: Int): Any = ???
-
-  def productArity: Int = ???
-
-  def canEqual(that: Any): Boolean = ???
 }
