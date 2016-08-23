@@ -51,12 +51,12 @@ object Scenario {
 
     val sd = SynthDef("test", ug)
 
-//    import at.iem.scalacollider.ScalaColliderDOT
-//    val dotC        = ScalaColliderDOT.Config()
-//    dotC.input      = sd.graph
-//    dotC.graphName  = sd.name
-//    val dot         = ScalaColliderDOT(dotC)
-//    println(dot)
+    import at.iem.scalacollider.ScalaColliderDOT
+    val dotC        = ScalaColliderDOT.Config()
+    dotC.input      = sd.graph
+    dotC.graphName  = sd.name
+    val dot         = ScalaColliderDOT(dotC)
+    println(dot)
 
     import Ops._
     Server.run { s =>
