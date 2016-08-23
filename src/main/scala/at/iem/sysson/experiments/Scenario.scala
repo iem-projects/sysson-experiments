@@ -5,7 +5,7 @@ import ugen._
 
 object Scenario {
   def main(args: Array[String]): Unit = {
-    lazy val sg1 = SynthGraph {
+    lazy val _ = SynthGraph {
       val amp : GE = "amp".kr
       val freq: GE = "freq".kr
 
@@ -33,7 +33,7 @@ object Scenario {
     }
 
     val sg2 = SynthGraph {
-      val amp : GE = "amp".kr
+      val amp : GE = "amp" .kr(0.2)
       val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
@@ -51,12 +51,22 @@ object Scenario {
 
     val sd = SynthDef("test", ug)
 
+//    import at.iem.scalacollider.ScalaColliderDOT
+//    val dotC        = ScalaColliderDOT.Config()
+//    dotC.input      = sd.graph
+//    dotC.graphName  = sd.name
+//    val dot         = ScalaColliderDOT(dotC)
+//    println(dot)
+
     import Ops._
     Server.run { s =>
+      println("Should hear WhiteNoise.")
       val syn = sd.play(args = List("freq" -> 0))
       Thread.sleep(2000)
+      println("Should hear Dust.")
       syn.set("freq" -> 101)
       Thread.sleep(2000)
+      println("Should hear SinOsc.")
       syn.set("freq" -> 1001)
       Thread.sleep(2000)
       s.quit()
