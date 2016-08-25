@@ -1,3 +1,17 @@
+/*
+ *  IfImpl.scala
+ *  (SysSon-Experiments)
+ *
+ *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
+ *  Written by Hanns Holger Rutz.
+ *
+ *	This software is published under the GNU Lesser General Public License v2.1+
+ *
+ *
+ *	For further information, please contact Hanns Holger Rutz at
+ *	contact@sciss.de
+ */
+
 package de.sciss.synth.ugen.impl.monolithic
 
 import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, If, IfBuilder}

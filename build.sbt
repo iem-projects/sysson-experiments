@@ -8,7 +8,7 @@ scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xfuture")
 
-lazy val scalaColliderVersion = "1.19.0"
+lazy val scalaColliderVersion = "1.19.1-SNAPSHOT"
 lazy val dotVersion           = "0.1.0"
 
 libraryDependencies ++= Seq(
