@@ -21,7 +21,7 @@ import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, UnaryOpUGe
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
-  def build(graph: SynthGraph) = {
+  def build(graph: SynthGraph): UGenGraph = {
     val b = new OuterImpl(graph)
     UGenGraph.use(b) {
       // val proxies = DefaultUGenGraphBuilderFactory.buildWith(graph, b)
@@ -79,9 +79,9 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
         case Constant(c) => c == 0 || c == 1
         case BinaryOpUGen(op, a, b) =>
           val opi = op.id
-          //        if (op == Eq || op == Neq || op == Lt || op == Gt || op == Leq || op == Geq) true
+          // if (op == Eq || op == Neq || op == Lt || op == Gt || op == Leq || op == Geq) true
           if (opi >= Eq.id && opi <= Geq.id) true
-          //        else if (op == BitAnd || op == BitOr || op == BitXor) isBinary(a) && isBinary(b)
+          // else if (op == BitAnd || op == BitOr || op == BitXor) isBinary(a) && isBinary(b)
           else if (opi >= BitAnd.id && opi <= BitXor.id) isBinary(a) && isBinary(b)
           else false
 
@@ -105,7 +105,10 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
           val resBus = s"$$if${ifId}r".ir
           Out.ar(resBus, c.res)
         }
+        // now call `UGenGraph.use()` with a child builder, and expand
+        // both `c.branch` and `graphB`.
 
+        ???
       }
       ???
     }
