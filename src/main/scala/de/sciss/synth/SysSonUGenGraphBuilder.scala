@@ -26,8 +26,32 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
       }
       build(controlProxies)
     }
+
+
+
+//    private[this] var _level = 0
+//
+//    def level: Int = _level
+//    def level_=(value: Int): Unit = if (_level != value) {
+//        ...
+//      _level = value
+//    }
+
+    protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph = ???
+
+    def addUGen(ugen: UGen): Unit = ???
+
+    def prependUGen(ugen: UGen): Unit = ???
+
+    def addControl(values: Vec[Float], name: Option[String]): Int = ???
+
+    def visit[U](ref: AnyRef, init: => U): U = ???
   }
 }
-trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
+trait SysSonUGenGraphBuilder extends UGenGraph.Builder {
+  protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
+
+//  var level: Int
+
 
 }
