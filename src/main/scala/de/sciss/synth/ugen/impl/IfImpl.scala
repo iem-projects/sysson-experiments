@@ -24,7 +24,7 @@ final class IfBuilderImpl(cond: GE) extends IfBuilder {
 
   def Then[A](branch: => A): If[A] = {
     val c = IfBuilderImpl.mkCase(cond, branch)
-    new IfImpl(c :: Nil)
+    IfImpl(c :: Nil)
   }
 }
 
@@ -57,7 +57,7 @@ trait IfImplLike[A] extends If[A] {
   def ElseIf(cond: GE): ElseIfBuilder[A] = new ElseIfBuilderImpl(cases, cond)
 }
 
-final class IfImpl[A](protected val cases: List[IfCase[A]]) extends IfImplLike[A]
+final case class IfImpl[A](cases: List[IfCase[A]]) extends IfImplLike[A]
 
 final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
 
