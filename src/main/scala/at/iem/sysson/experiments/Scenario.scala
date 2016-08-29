@@ -16,6 +16,7 @@ package at.iem.sysson.experiments
 
 import de.sciss.synth._
 import ugen._
+import de.sciss.file._
 
 object Scenario {
   def main(args: Array[String]): Unit = {
@@ -71,10 +72,11 @@ object Scenario {
       val dotC        = ScalaColliderDOT.Config()
       dotC.input      = res /* sd */.graph
       dotC.graphName  = /* sd. */ name
-      val dot         = ScalaColliderDOT(dotC)
-      println(dot)
+//      val dot         = ScalaColliderDOT(dotC)
+//      println(dot)
+      ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
       res.children.zipWithIndex.foreach { case (child, ci) =>
-        print(s"level ${level + 1} idx $ci", level + 1, child)
+        print(s"child ${ci + 1}", level + 1, child)
       }
     }
 

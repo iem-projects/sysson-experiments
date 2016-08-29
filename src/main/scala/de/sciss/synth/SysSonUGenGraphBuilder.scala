@@ -19,7 +19,7 @@ import de.sciss.synth.ugen.impl.modular.IfCase
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
-import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
+import scala.collection.immutable.{Set => ISet}
 import scala.collection.mutable
 
 object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
@@ -124,13 +124,19 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
     // ---- internal ----
 
+    private[this] var linkMap = Map.empty[AnyRef, Link]
+
     final def tryRefer(ref: AnyRef): Option[(Link, UGenInLike)] =
       sourceMap.get(ref).collect {
         case sig: UGenInLike =>
-          val numChannels = sig.outputs.size
-          val linkId      = outer.allocLinkId()
-          val link        = Link(id = linkId, numChannels = numChannels)
-          val ctlName     = linkCtlName(linkId)
+          val link        = linkMap.getOrElse(ref, {
+            val numChannels = sig.outputs.size
+            val linkId      = outer.allocLinkId()
+            val res         = Link(id = linkId, numChannels = numChannels)
+            linkMap += ref -> res
+            res
+          })
+          val ctlName     = linkCtlName(link.id)
           // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
           val rate        = sig.rate match {
             case r: Rate => r
@@ -148,7 +154,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
           }
           // then add a control and `In` to the caller (child) graph
           val ctl = ctlName.ir    // link-bus
-          val in  = In(rate, bus = ctl, numChannels = numChannels)
+          val in  = In(rate, bus = ctl, numChannels = link.numChannels)
           _linkOut ::= link
           val inExp = in.expand
           (link, inExp)
