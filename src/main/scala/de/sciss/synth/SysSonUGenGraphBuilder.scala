@@ -99,6 +99,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     final def build(g0: SynthGraph): Result = SynthGraph.use(builder) {
       UGenGraph.use(builder) {
         var _sources: Iterable[Lazy] = g0.sources
+        controlProxies = g0.controlProxies
         do {
           if (sources.nonEmpty) sources = mutable.Buffer.empty
           _sources.foreach(_.force(builder))

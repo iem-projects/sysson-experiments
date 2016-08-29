@@ -73,8 +73,8 @@ object Scenario {
       dotC.graphName  = /* sd. */ name
       val dot         = ScalaColliderDOT(dotC)
       println(dot)
-      res.children.foreach { child =>
-        print(s"level ${level + 1}", level + 1, child)
+      res.children.zipWithIndex.foreach { case (child, ci) =>
+        print(s"level ${level + 1} idx $ci", level + 1, child)
       }
     }
 
