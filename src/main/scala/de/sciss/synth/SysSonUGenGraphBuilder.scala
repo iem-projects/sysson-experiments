@@ -22,14 +22,18 @@ import scala.annotation.elidable
 import scala.collection.immutable.{Set => ISet}
 import scala.collection.mutable
 
-object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
+object SysSonUGenGraphBuilder {
   final case class Link(id: Int, numChannels: Int)
 
   trait Result {
     def graph: UGenGraph
 
-    def linkOut  : List[Link]
-    def linkIn   : List[Link]
+    def linkOut: List[Link]
+
+    // XXX TODO --- since all synths will be started within the same group,
+    // we don't actually need to remember the link-in list, because if
+    // we set the control on the group both sink and source will see it.
+    def linkIn: List[Link]
 
     def children: List[Result]
   }
@@ -73,9 +77,9 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
   /*
     TODO:
 
-    - find expanded source in parents and establish link
     - more efficient bundling of buses (e.g. one control per if block)
     - create return signal
+    - handle controls over boundaries
 
    */
   private trait Impl extends SysSonUGenGraphBuilder with SynthGraph.Builder {
@@ -206,12 +210,6 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
         val s   = if (j < 0) clz.substring(i) else clz.substring(i, j)
         s"$s@${ref.hashCode().toHexString}"
     }
-    //      t.getStackTrace.foreach { ste =>
-    //        val clz = ste.getClassName
-    //        val fl  = ste.getFileName
-    //        val m = ste.getMethodName
-    //        val ln = ste.getLineNumber
-    //      }
     opt.getOrElse(ref.hashCode.toHexString)
   }
 
@@ -241,18 +239,6 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
         exp
       }).asInstanceOf[U] // not so pretty...
     }
-
-    //    def allocIfId(): Int = outer.allocIfId()
-
-//    def expandIfGE(cases: List[IfCase[GE]]): GE = {
-//      // we would need to get the `ifCount` from parent
-//      // and AND with the parent branch cond.
-//      // Alternatively, we create a `Group` that will
-//      // then be the node-ID for the parent to pause/resume.
-//      // That way we can avoid the AND.
-//      throw new NotImplementedError("Nested expandIfGE")
-//      ...
-//    }
   }
 
   private final class OuterImpl extends Impl {
@@ -262,18 +248,6 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
 //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
-
-//    private[this] var _level = 0
-//
-//    def level: Int = _level
-//    def level_=(value: Int): Unit = if (_level != value) {
-//        ...
-//      _level = value
-//    }
-
-//    def allocSubGraph(): Int = ...
-//
-//    def nested[A](fun: => A): A = ...
 
     private[this] var ifCount = 0
 
@@ -317,10 +291,4 @@ trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
   def expandIfGE(cases: List[IfCase[GE]]): GE
-
-//  var level: Int
-
-//  def allocSubGraph(): Int
-//
-//  def nested[A](fun: => A): A
 }
