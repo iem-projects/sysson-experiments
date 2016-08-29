@@ -15,14 +15,21 @@
 package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
+import de.sciss.synth.ugen.impl.ControlImpl
 import de.sciss.synth.ugen.impl.modular.IfCase
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, UnaryOpUGen}
+import de.sciss.synth.ugen.{AudioControlProxy, BinaryOpUGen, Constant, Control, ControlProxy, ControlProxyLike, In, Out, UnaryOpUGen}
 
-import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
+import scala.collection.immutable.{Set => ISet}
 
 object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
+  final case class Link(id: Int, numChannels: Int)
+
   trait Result {
     def graph: UGenGraph
+
+    def linkOut  : List[Link]
+    def linkIn   : List[Link]
+
     def children: List[Result]
   }
 
@@ -39,6 +46,9 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
   def pauseBusCtlName(ifId: Int, caseId: Int): String =
     s"$$if${ifId}_${caseId}b"
+
+  def linkCtlName(linkId: Int): String =
+    s"$$lnk$linkId"
 
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
@@ -59,8 +69,17 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
   private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
 
-  private final case class ResultImpl(graph: UGenGraph, children: List[Result]) extends Result
+  private final case class ResultImpl(graph: UGenGraph, linkIn: List[Link], linkOut: List[Link],
+                                      children: List[Result]) extends Result
 
+  /*
+    TODO:
+
+    - find expanded source in parents and establish link
+    - more efficient bundling of buses (e.g. one control per if block)
+    - create return signal
+
+   */
   private trait Impl extends SysSonUGenGraphBuilder {
     builder =>
 
@@ -73,12 +92,39 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     // ---- impl ----
 
     protected var _children = List.empty[Result]
+    protected var _linkIn   = List.empty[Link]
+    protected var _linkOut  = List.empty[Link]
 
-    def children: List[Result] = _children.reverse
+    // def children: List[Result] = _children.reverse
 
     final def build: Result = {
       val ugens = buildGraph(graph)
-      ResultImpl(ugens, children)
+      ResultImpl(ugens, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
+    }
+
+    protected final def tryRefer[U](ref: AnyRef, init: => U): Option[(Link, GE)] = {
+      sourceMap.get(ref).collect {
+        case sig: UGenInLike =>
+          val numChannels = sig.outputs.size
+          val linkId      = outer.allocLinkId()
+          val link        = Link(id = linkId, numChannels = numChannels)
+          val ctlName     = linkCtlName(linkId)
+          // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
+          val rate        = sig.rate match {
+            case r: Rate => r
+            case _ => throw new IllegalArgumentException("Cannot refer to UGen group with mixed rates across branches")
+          }
+          // add a control and `Out` to this (parent) graph
+          UGenGraph.use(builder) {
+            val ctl = ctlName.ir    // link-bus
+            Out(rate, bus = ctl, in = sig)
+          }
+          // then add a control and `In` to the caller (child) graph
+          val ctl = ctlName.ir    // link-bus
+          val in  = In(rate, bus = ctl, numChannels = numChannels)
+          _linkOut ::= link
+          (link, in)
+      }
     }
 
     override def visit[U](ref: AnyRef, init: => U): U = {
@@ -140,7 +186,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
   private final class InnerImpl(val outer: OuterImpl, val graph: SynthGraph, ifId: Int, caseId: Int)
     extends Impl {
 
-    def allocIfId(): Int = outer.allocIfId()
+//    def allocIfId(): Int = outer.allocIfId()
 
 //    def expandIfGE(cases: List[IfCase[GE]]): GE = {
 //      // we would need to get the `ifCount` from parent
@@ -177,6 +223,14 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     def allocIfId(): Int = {
       val res = ifCount
       ifCount += 1
+      res
+    }
+
+    private[this] var linkCount = 0
+
+    def allocLinkId(): Int = {
+      val res = linkCount
+      linkCount += 1
       res
     }
 
