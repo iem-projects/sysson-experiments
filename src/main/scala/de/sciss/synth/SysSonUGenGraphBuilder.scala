@@ -34,6 +34,12 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     }
   }
 
+  def pauseNodeCtlName(ifId: Int, caseId: Int): String =
+    s"$$if${ifId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
+
+  def pauseBusCtlName(ifId: Int, caseId: Int): String =
+    s"$$if${ifId}_${caseId}b"
+
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
     in match {
@@ -88,12 +94,21 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
     final def expandIfGE(cases: List[IfCase[GE]]): GE = {
       val ifId = outer.allocIfId()
+      var condAcc: GE = 0
       cases.zipWithIndex.foreach { case (c, ci) =>
-        val condB = forceBinary(c.cond)
-        val condS = if (ci == 0) condB else condB sig_== (1 << ci)
+        // make sure the condition is zero or one
+        val condBin   = forceBinary(c.cond)
+        // then "bit-shift" it. XXX TODO --- does SuperCollider BinaryOpUGen implement bit-shift?
+        val condShift = if (ci == 0) condBin else condBin sig_== (1 << ci)
+        // then collect the bits in a "bit-field"
+        condAcc       = if (ci == 0) condBin else condAcc | condShift
+        // then the branch condition is met when the field equals the shifted single condition
+        val condEq    = if (ci == 0) condBin else condAcc sig_== condShift
         import ugen._
-        val nodeCtl = s"$$if${ifId}_$ci"    // e.g. first if block third branch is `$if0_2`
-        Pause.kr(gate = condB, node = nodeCtl.ir)
+        val nodeCtl = pauseNodeCtlName(ifId, ci)
+        val busCtl  = pauseBusCtlName (ifId, ci)
+        Pause.kr(gate = condEq, node = nodeCtl.ir)
+        Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
         val graphB = SynthGraph {
           val resBus = s"$$if${ifId}r".ir
           Out.ar(resBus, c.res)
@@ -101,17 +116,13 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
-          controlProxies = c.branch.controlProxies ++ graphB.controClProxies)
-        val child = new InnerImpl(outer, graphC)
+          controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
+        val child = new InnerImpl(outer, graphC, ifId = ifId, caseId = ci)
         _children ::= UGenGraph.use(child) {
           child.build
-          //          c.branch.expand(child)
-          //          graphB  .expand(child)
         }
-
-        ???
       }
-      ???
+      ugen.DC.ar(0) // XXX TODO
     }
 
     protected final def buildGraph(g0: SynthGraph): UGenGraph = {
@@ -126,7 +137,9 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     }
   }
 
-  private final class InnerImpl(val outer: OuterImpl, val graph: SynthGraph) extends Impl {
+  private final class InnerImpl(val outer: OuterImpl, val graph: SynthGraph, ifId: Int, caseId: Int)
+    extends Impl {
+
     def allocIfId(): Int = outer.allocIfId()
 
 //    def expandIfGE(cases: List[IfCase[GE]]): GE = {

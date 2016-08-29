@@ -48,7 +48,8 @@ object Scenario {
 
     val sg2 = SynthGraph {
       val amp : GE = "amp" .kr(0.2)
-      val freq: GE = "freq".kr
+//      val freq: GE = "freq".kr
+      val freq: GE = ExpRand(10, 10000) // XXX TODO --- control currently doesn't work in child branches
 
       val res0: GE = If (freq > 1000) Then {
         SinOsc.ar(freq)
