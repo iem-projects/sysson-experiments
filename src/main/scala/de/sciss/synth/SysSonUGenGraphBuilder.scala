@@ -15,10 +15,10 @@
 package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.ControlImpl
 import de.sciss.synth.ugen.impl.modular.IfCase
-import de.sciss.synth.ugen.{AudioControlProxy, BinaryOpUGen, Constant, Control, ControlProxy, ControlProxyLike, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
+import scala.annotation.elidable
 import scala.collection.immutable.{Set => ISet}
 
 object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
@@ -102,7 +102,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
       ResultImpl(ugens, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
     }
 
-    protected final def tryRefer[U](ref: AnyRef, init: => U): Option[(Link, GE)] = {
+    final def tryRefer[U](ref: AnyRef, init: => U): Option[(Link, U)] =
       sourceMap.get(ref).collect {
         case sig: UGenInLike =>
           val numChannels = sig.outputs.size
@@ -123,20 +123,8 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
           val ctl = ctlName.ir    // link-bus
           val in  = In(rate, bus = ctl, numChannels = numChannels)
           _linkOut ::= link
-          (link, in)
+          (link, in.expand.asInstanceOf[U])
       }
-    }
-
-    override def visit[U](ref: AnyRef, init: => U): U = {
-      // log(s"visit  ${ref.hashCode.toHexString}")
-      sourceMap.getOrElse(ref, {
-        // log(s"expand ${ref.hashCode.toHexString}...")
-        val exp    = init
-        // log(s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
-        sourceMap += ref -> exp
-        exp
-      }).asInstanceOf[U] // not so pretty...
-    }
 
     final def expandIfGE(cases: List[IfCase[GE]]): GE = {
       val ifId = outer.allocIfId()
@@ -163,7 +151,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child = new InnerImpl(outer, graphC, ifId = ifId, caseId = ci)
+        val child = new InnerImpl(builder, graphC, ifId = ifId, caseId = ci)
         _children ::= UGenGraph.use(child) {
           child.build
         }
@@ -183,10 +171,32 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     }
   }
 
-  private final class InnerImpl(val outer: OuterImpl, val graph: SynthGraph, ifId: Int, caseId: Int)
+  private final class InnerImpl(parent: Impl, val graph: SynthGraph, ifId: Int, caseId: Int)
     extends Impl {
 
-//    def allocIfId(): Int = outer.allocIfId()
+    def outer: OuterImpl = parent.outer
+
+    override def toString = s"inner{if $ifId case $caseId}"
+
+    override def visit[U](ref: AnyRef, init: => U): U = {
+      // log(s"visit  ${ref.hashCode.toHexString}")
+      sourceMap.getOrElse(ref, {
+        log(this, s"expand ${ref.hashCode.toHexString}...")
+        val exp = parent.tryRefer(ref, init).fold {
+          log(this, s"...${ref.hashCode.toHexString} -> not yet found")
+          init
+        } { case (link, in) =>
+          log(this, s"...${ref.hashCode.toHexString} -> found in parent: $link")
+          _linkIn ::= link
+          in
+        }
+        sourceMap += ref -> exp
+        log(this, s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
+        exp
+      }).asInstanceOf[U] // not so pretty...
+    }
+
+    //    def allocIfId(): Int = outer.allocIfId()
 
 //    def expandIfGE(cases: List[IfCase[GE]]): GE = {
 //      // we would need to get the `ifCount` from parent
@@ -204,7 +214,8 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
     def outer: OuterImpl = this
 
-    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+//    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+    override def toString = "outer"
 
 //    private[this] var _level = 0
 //
@@ -234,15 +245,27 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
       res
     }
 
-    // ---- proxy ----
-
-//    private[this] val current: SysSonUGenGraphBuilder = ...
-//
-//    def addUGen    (ugen: UGen): Unit = current.addUGen    (ugen)
-//    def prependUGen(ugen: UGen): Unit = current.prependUGen(ugen)
-//
-//    def addControl(values: Vec[Float], name: Option[String]): Int = current.addControl(values, name)
+    override def visit[U](ref: AnyRef, init: => U): U = {
+      log(this, s"visit  ${ref.hashCode.toHexString}")
+      sourceMap.getOrElse(ref, {
+        log(this, s"expand ${ref.hashCode.toHexString}...")
+        val exp = init
+        log(this, s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
+        sourceMap += ref -> exp
+        exp
+      }).asInstanceOf[U] // not so pretty...
+    }
   }
+
+  private def printSmart(x: Any): String = x match {
+    case u: UGen  => u.name
+    case _        => x.toString
+  }
+
+  var showLog = true
+
+  @elidable(elidable.CONFIG) private def log(builder: Impl, what: => String): Unit =
+    if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
 }
 trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
