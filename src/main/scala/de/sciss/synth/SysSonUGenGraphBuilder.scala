@@ -16,7 +16,7 @@ package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.IfCase
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen, XOut}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{Set => ISet}
@@ -102,7 +102,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
       ResultImpl(ugens, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
     }
 
-    final def tryRefer[U](ref: AnyRef, init: => U): Option[(Link, U)] =
+    final def tryRefer(ref: AnyRef): Option[(Link, UGenInLike)] =
       sourceMap.get(ref).collect {
         case sig: UGenInLike =>
           val numChannels = sig.outputs.size
@@ -114,16 +114,27 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
             case r: Rate => r
             case _ => throw new IllegalArgumentException("Cannot refer to UGen group with mixed rates across branches")
           }
-          // add a control and `Out` to this (parent) graph
-          UGenGraph.use(builder) {
+          // Add a control and `Out` to this (parent) graph.
+          // This is super tricky -- we have to encapsulate
+          // in a new synth graph because otherwise GE will
+          // end up in the caller's synth graph; there is
+          // no way we can catch them in our own outer synth graph,
+          // so we must then force them explicitly!
+          val addToMain = SynthGraph {
             val ctl = ctlName.ir    // link-bus
             Out(rate, bus = ctl, in = sig)
+          }
+          UGenGraph.use(builder) {
+            addToMain.sources.foreach { src =>
+              src.force(builder)
+            }
           }
           // then add a control and `In` to the caller (child) graph
           val ctl = ctlName.ir    // link-bus
           val in  = In(rate, bus = ctl, numChannels = numChannels)
           _linkOut ::= link
-          (link, in.expand.asInstanceOf[U])
+          val inExp = in.expand
+          (link, inExp)
       }
 
     final def expandIfGE(cases: List[IfCase[GE]]): GE = {
@@ -165,7 +176,9 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
       while (g.nonEmpty) {
         // XXX these two lines could be more efficient eventually -- using a 'clearable' SynthGraph
         controlProxies ++= g.controlProxies
-        g = SynthGraph(g.sources.foreach(_.force(builder))) // allow for further graphs being created
+        g = SynthGraph(g.sources.foreach { src =>
+          src.force(builder)
+        }) // allow for further graphs being created
       }
       build(controlProxies)
     }
@@ -178,20 +191,43 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 
     override def toString = s"inner{if $ifId case $caseId}"
 
-    override def visit[U](ref: AnyRef, init: => U): U = {
+    override def visit[U](ref: AnyRef, init: => U): U = visit1[U](ref, () => init)
+
+    private def smartRef(ref: AnyRef): String = {
+      val t = new Throwable
+      t.fillInStackTrace()
+      val trace = t.getStackTrace
+      val opt = trace.collectFirst {
+        case ste if (ste.getMethodName == "force" || ste.getMethodName == "expand") && ste.getFileName != "Lazy.scala" =>
+          val clz = ste.getClassName
+          val i   = clz.lastIndexOf(".") + 1
+          val j   = clz.lastIndexOf("@", i)
+          val s   = if (j < 0) clz.substring(i) else clz.substring(i, j)
+          s"$s@${ref.hashCode().toHexString}"
+      }
+//      t.getStackTrace.foreach { ste =>
+//        val clz = ste.getClassName
+//        val fl  = ste.getFileName
+//        val m = ste.getMethodName
+//        val ln = ste.getLineNumber
+//      }
+      opt.getOrElse(ref.hashCode.toHexString)
+    }
+
+    private def visit1[U](ref: AnyRef, init: () => U): U = {
       // log(s"visit  ${ref.hashCode.toHexString}")
       sourceMap.getOrElse(ref, {
-        log(this, s"expand ${ref.hashCode.toHexString}...")
-        val exp = parent.tryRefer(ref, init).fold {
-          log(this, s"...${ref.hashCode.toHexString} -> not yet found")
-          init
+        log(this, s"expand ${smartRef(ref)}...")
+        val exp = parent.tryRefer(ref).fold[Any] {
+          log(this, s"...${smartRef(ref)} -> not yet found")
+          init()
         } { case (link, in) =>
-          log(this, s"...${ref.hashCode.toHexString} -> found in parent: $link")
+          log(this, s"...${smartRef(ref)} -> found in parent: $link")
           _linkIn ::= link
           in
         }
         sourceMap += ref -> exp
-        log(this, s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
+        log(this, s"...${smartRef(ref)} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
         exp
       }).asInstanceOf[U] // not so pretty...
     }
