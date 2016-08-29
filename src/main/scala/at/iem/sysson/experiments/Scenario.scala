@@ -61,30 +61,37 @@ object Scenario {
       Out.ar(0, Pan2.ar(res0 * amp))
     }
 
-    val ug = sg2.expand(SysSonUGenGraphBuilder)
+    val ug = SysSonUGenGraphBuilder.build(sg2)
 
-    val sd = SynthDef("test", ug)
+//    val sd = SynthDef("test", ug)
 
-    import at.iem.scalacollider.ScalaColliderDOT
-    val dotC        = ScalaColliderDOT.Config()
-    dotC.input      = sd.graph
-    dotC.graphName  = sd.name
-    val dot         = ScalaColliderDOT(dotC)
-    println(dot)
-
-    import Ops._
-    Server.run { s =>
-      println("Should hear WhiteNoise.")
-      val syn = sd.play(args = List("freq" -> 0))
-      Thread.sleep(2000)
-      println("Should hear Dust.")
-      syn.set("freq" -> 101)
-      Thread.sleep(2000)
-      println("Should hear SinOsc.")
-      syn.set("freq" -> 1001)
-      Thread.sleep(2000)
-      s.quit()
-      sys.exit()
+    def print(name: String, level: Int, res: SysSonUGenGraphBuilder.Result): Unit = {
+      import at.iem.scalacollider.ScalaColliderDOT
+      val dotC        = ScalaColliderDOT.Config()
+      dotC.input      = res /* sd */.graph
+      dotC.graphName  = /* sd. */ name
+      val dot         = ScalaColliderDOT(dotC)
+      println(dot)
+      res.children.foreach { child =>
+        print(s"level ${level + 1}", level + 1, child)
+      }
     }
+
+    print("top", 0, ug)
+
+//    import Ops._
+//    Server.run { s =>
+//      println("Should hear WhiteNoise.")
+//      val syn = sd.play(args = List("freq" -> 0))
+//      Thread.sleep(2000)
+//      println("Should hear Dust.")
+//      syn.set("freq" -> 101)
+//      Thread.sleep(2000)
+//      println("Should hear SinOsc.")
+//      syn.set("freq" -> 1001)
+//      Thread.sleep(2000)
+//      s.quit()
+//      sys.exit()
+//    }
   }
 }

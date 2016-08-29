@@ -3,6 +3,7 @@ package at.iem.sysson.experiments
 import de.sciss.synth
 import de.sciss.synth.GE
 import de.sciss.synth.ugen.impl.monolithic.{IfBuilderImpl => IfMono}
+import de.sciss.synth.ugen.impl.modular   .{IfBuilderImpl => IfMod}
 
 import scala.language.implicitConversions
 
@@ -62,9 +63,9 @@ import scala.language.implicitConversions
  */
 
 object If {
-  var monolithic: Boolean = true
+  var monolithic: Boolean = false // true
 
-  def apply(cond: /* => */ GE): IfBuilder = if (monolithic) IfMono(cond) else ???
+  def apply(cond: /* => */ GE): IfBuilder = if (monolithic) IfMono(cond) else IfMod(cond)
 
 //  implicit def result[A](x: If[A]): A = ...
 }

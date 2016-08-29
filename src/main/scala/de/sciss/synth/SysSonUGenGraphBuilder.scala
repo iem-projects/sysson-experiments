@@ -20,8 +20,13 @@ import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, UnaryOpUGe
 
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
-object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
-  def build(graph: SynthGraph): UGenGraph = {
+object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
+  trait Result {
+    def graph: UGenGraph
+    def children: List[Result]
+  }
+
+  def build(graph: SynthGraph): Result = {
     val b = new OuterImpl(graph)
     UGenGraph.use(b) {
       // val proxies = DefaultUGenGraphBuilderFactory.buildWith(graph, b)
@@ -29,91 +34,60 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
     }
   }
 
+  private def isBinary(in: GE): Boolean = {
+    import BinaryOpUGen._
+    in match {
+      case Constant(c) => c == 0 || c == 1
+      case BinaryOpUGen(op, a, b) =>
+        val opi = op.id
+        // if (op == Eq || op == Neq || op == Lt || op == Gt || op == Leq || op == Geq) true
+        if (opi >= Eq.id && opi <= Geq.id) true
+        // else if (op == BitAnd || op == BitOr || op == BitXor) isBinary(a) && isBinary(b)
+        else if (opi >= BitAnd.id && opi <= BitXor.id) isBinary(a) && isBinary(b)
+        else false
+
+      case UnaryOpUGen(UnaryOpUGen.Not, _) => true
+      case _ => false
+    }
+  }
+
+  private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
+
+  private final case class ResultImpl(graph: UGenGraph, children: List[Result]) extends Result
+
   private trait Impl extends SysSonUGenGraphBuilder {
     builder =>
 
-    def build: UGenGraph
+    // ---- abstract ----
 
-    protected final def buildGraph(g0: SynthGraph): UGenGraph = {
-      var g = g0
-      var controlProxies = ISet.empty[ControlProxyLike]
-      while (g.nonEmpty) {
-        // XXX these two lines could be more efficient eventually -- using a 'clearable' SynthGraph
-        controlProxies ++= g.controlProxies
-        g = SynthGraph(g.sources.foreach(_.force(builder))) // allow for further graphs being created
-      }
-      build(controlProxies)
-    }
-  }
+    def outer: OuterImpl
 
-  private final class InnerImpl(graph: SynthGraph) extends Impl {
-    def build: UGenGraph = {
-      ???
-      buildGraph(graph)
+    protected def graph: SynthGraph
+
+    // ---- impl ----
+
+    protected var _children = List.empty[Result]
+
+    def children: List[Result] = _children.reverse
+
+    final def build: Result = {
+      val ugens = buildGraph(graph)
+      ResultImpl(ugens, children)
     }
 
-    def expandIfGE(cases: List[IfCase[GE]]): GE = {
-      // we would need to get the `ifCount` from parent
-      // and AND with the parent branch cond.
-      // Alternatively, we create a `Group` that will
-      // then be the node-ID for the parent to pause/resume.
-      // That way we can avoid the AND.
-      throw new NotImplementedError("Nested expandIfGE")
-      ???
+    override def visit[U](ref: AnyRef, init: => U): U = {
+      // log(s"visit  ${ref.hashCode.toHexString}")
+      sourceMap.getOrElse(ref, {
+        // log(s"expand ${ref.hashCode.toHexString}...")
+        val exp    = init
+        // log(s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
+        sourceMap += ref -> exp
+        exp
+      }).asInstanceOf[U] // not so pretty...
     }
 
-    override def visit[U](ref: AnyRef, init: => U): U = ???
-  }
-
-  private final class OuterImpl(graph: SynthGraph) extends Impl {
-    builder =>
-
-    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
-
-    def build: UGenGraph = {
-      ???
-      buildGraph(graph)
-    }
-
-//    private[this] var _level = 0
-//
-//    def level: Int = _level
-//    def level_=(value: Int): Unit = if (_level != value) {
-//        ...
-//      _level = value
-//    }
-
-    override def visit[U](ref: AnyRef, init: => U): U = ???
-
-//    def allocSubGraph(): Int = ...
-//
-//    def nested[A](fun: => A): A = ...
-
-    private[this] var ifCount = 0
-
-
-    private def isBinary(in: GE): Boolean = {
-      import BinaryOpUGen._
-      in match {
-        case Constant(c) => c == 0 || c == 1
-        case BinaryOpUGen(op, a, b) =>
-          val opi = op.id
-          // if (op == Eq || op == Neq || op == Lt || op == Gt || op == Leq || op == Geq) true
-          if (opi >= Eq.id && opi <= Geq.id) true
-          // else if (op == BitAnd || op == BitOr || op == BitXor) isBinary(a) && isBinary(b)
-          else if (opi >= BitAnd.id && opi <= BitXor.id) isBinary(a) && isBinary(b)
-          else false
-
-        case UnaryOpUGen(UnaryOpUGen.Not, _) => true
-        case _ => false
-      }
-    }
-
-    private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
-
-    def expandIfGE(cases: List[IfCase[GE]]): GE = {
-      val ifId = ifCount
-      ifCount += 1
+    final def expandIfGE(cases: List[IfCase[GE]]): GE = {
+      val ifId = outer.allocIfId()
       cases.zipWithIndex.foreach { case (c, ci) =>
         val condB = forceBinary(c.cond)
         val condS = if (ci == 0) condB else condB sig_== (1 << ci)
@@ -127,17 +101,70 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
-          controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child: Impl = new InnerImpl(graphC)
-        UGenGraph.use(child) {
+          controlProxies = c.branch.controlProxies ++ graphB.controClProxies)
+        val child = new InnerImpl(outer, graphC)
+        _children ::= UGenGraph.use(child) {
           child.build
-//          c.branch.expand(child)
-//          graphB  .expand(child)
+          //          c.branch.expand(child)
+          //          graphB  .expand(child)
         }
 
         ???
       }
       ???
+    }
+
+    protected final def buildGraph(g0: SynthGraph): UGenGraph = {
+      var g = g0
+      var controlProxies = ISet.empty[ControlProxyLike]
+      while (g.nonEmpty) {
+        // XXX these two lines could be more efficient eventually -- using a 'clearable' SynthGraph
+        controlProxies ++= g.controlProxies
+        g = SynthGraph(g.sources.foreach(_.force(builder))) // allow for further graphs being created
+      }
+      build(controlProxies)
+    }
+  }
+
+  private final class InnerImpl(val outer: OuterImpl, val graph: SynthGraph) extends Impl {
+    def allocIfId(): Int = outer.allocIfId()
+
+//    def expandIfGE(cases: List[IfCase[GE]]): GE = {
+//      // we would need to get the `ifCount` from parent
+//      // and AND with the parent branch cond.
+//      // Alternatively, we create a `Group` that will
+//      // then be the node-ID for the parent to pause/resume.
+//      // That way we can avoid the AND.
+//      throw new NotImplementedError("Nested expandIfGE")
+//      ...
+//    }
+  }
+
+  private final class OuterImpl(val graph: SynthGraph) extends Impl {
+    builder =>
+
+    def outer: OuterImpl = this
+
+    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+
+//    private[this] var _level = 0
+//
+//    def level: Int = _level
+//    def level_=(value: Int): Unit = if (_level != value) {
+//        ...
+//      _level = value
+//    }
+
+//    def allocSubGraph(): Int = ...
+//
+//    def nested[A](fun: => A): A = ...
+
+    private[this] var ifCount = 0
+
+    def allocIfId(): Int = {
+      val res = ifCount
+      ifCount += 1
+      res
     }
 
     // ---- proxy ----
