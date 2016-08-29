@@ -16,10 +16,11 @@ package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.IfCase
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen, XOut}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
-import scala.collection.immutable.{Set => ISet}
+import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
+import scala.collection.mutable
 
 object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
   final case class Link(id: Int, numChannels: Int)
@@ -34,11 +35,8 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
   }
 
   def build(graph: SynthGraph): Result = {
-    val b = new OuterImpl(graph)
-    UGenGraph.use(b) {
-      // val proxies = DefaultUGenGraphBuilderFactory.buildWith(graph, b)
-      b.build
-    }
+    val b = new OuterImpl
+    b.build(graph)
   }
 
   def pauseNodeCtlName(ifId: Int, caseId: Int): String =
@@ -80,14 +78,12 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     - create return signal
 
    */
-  private trait Impl extends SysSonUGenGraphBuilder {
+  private trait Impl extends SysSonUGenGraphBuilder with SynthGraph.Builder {
     builder =>
 
     // ---- abstract ----
 
     def outer: OuterImpl
-
-    protected def graph: SynthGraph
 
     // ---- impl ----
 
@@ -95,12 +91,37 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     protected var _linkIn   = List.empty[Link]
     protected var _linkOut  = List.empty[Link]
 
-    // def children: List[Result] = _children.reverse
+    private[this] var sources         = mutable.Buffer.empty[Lazy]    // g0.sources
+    private[this] var controlProxies  = ISet.empty[ControlProxyLike]  // g0.controlProxies
 
-    final def build: Result = {
-      val ugens = buildGraph(graph)
-      ResultImpl(ugens, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
+    override def toString = s"SynthGraph.Builder@${hashCode.toHexString}"
+
+    final def build(g0: SynthGraph): Result = SynthGraph.use(builder) {
+      UGenGraph.use(builder) {
+        var _sources: Iterable[Lazy] = g0.sources
+        do {
+          if (sources.nonEmpty) sources = mutable.Buffer.empty
+          _sources.foreach(_.force(builder))
+          _sources = sources
+        } while (_sources.nonEmpty)
+        val ugenGraph = build(controlProxies)
+        ResultImpl(ugenGraph, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
+      }
     }
+
+    final def run[A](thunk: => A): A = SynthGraph.use(builder) {
+      UGenGraph.use(builder) {
+        thunk
+      }
+    }
+
+    // ---- SynthGraph.Builder ----
+
+    final def addLazy(g: Lazy): Unit = sources += g
+
+    final def addControlProxy(proxy: ControlProxyLike): Unit = controlProxies += proxy
+
+    // ---- internal ----
 
     final def tryRefer(ref: AnyRef): Option[(Link, UGenInLike)] =
       sourceMap.get(ref).collect {
@@ -120,14 +141,9 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
           // end up in the caller's synth graph; there is
           // no way we can catch them in our own outer synth graph,
           // so we must then force them explicitly!
-          val addToMain = SynthGraph {
+          run {
             val ctl = ctlName.ir    // link-bus
             Out(rate, bus = ctl, in = sig)
-          }
-          UGenGraph.use(builder) {
-            addToMain.sources.foreach { src =>
-              src.force(builder)
-            }
           }
           // then add a control and `In` to the caller (child) graph
           val ctl = ctlName.ir    // link-bus
@@ -136,6 +152,8 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
           val inExp = in.expand
           (link, inExp)
       }
+
+    // ---- UGenGraph.Builder ----
 
     final def expandIfGE(cases: List[IfCase[GE]]): GE = {
       val ifId = outer.allocIfId()
@@ -162,29 +180,35 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child = new InnerImpl(builder, graphC, ifId = ifId, caseId = ci)
-        _children ::= UGenGraph.use(child) {
-          child.build
-        }
+        val child = new InnerImpl(builder, ifId = ifId, caseId = ci)
+        _children ::= child.build(graphC)
       }
       ugen.DC.ar(0) // XXX TODO
     }
-
-    protected final def buildGraph(g0: SynthGraph): UGenGraph = {
-      var g = g0
-      var controlProxies = ISet.empty[ControlProxyLike]
-      while (g.nonEmpty) {
-        // XXX these two lines could be more efficient eventually -- using a 'clearable' SynthGraph
-        controlProxies ++= g.controlProxies
-        g = SynthGraph(g.sources.foreach { src =>
-          src.force(builder)
-        }) // allow for further graphs being created
-      }
-      build(controlProxies)
-    }
   }
 
-  private final class InnerImpl(parent: Impl, val graph: SynthGraph, ifId: Int, caseId: Int)
+  private def smartRef(ref: AnyRef): String = {
+    val t = new Throwable
+    t.fillInStackTrace()
+    val trace = t.getStackTrace
+    val opt = trace.collectFirst {
+      case ste if (ste.getMethodName == "force" || ste.getMethodName == "expand") && ste.getFileName != "Lazy.scala" =>
+        val clz = ste.getClassName
+        val i   = clz.lastIndexOf(".") + 1
+        val j   = clz.lastIndexOf("@", i)
+        val s   = if (j < 0) clz.substring(i) else clz.substring(i, j)
+        s"$s@${ref.hashCode().toHexString}"
+    }
+    //      t.getStackTrace.foreach { ste =>
+    //        val clz = ste.getClassName
+    //        val fl  = ste.getFileName
+    //        val m = ste.getMethodName
+    //        val ln = ste.getLineNumber
+    //      }
+    opt.getOrElse(ref.hashCode.toHexString)
+  }
+
+  private final class InnerImpl(parent: Impl, ifId: Int, caseId: Int)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -192,27 +216,6 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     override def toString = s"inner{if $ifId case $caseId}"
 
     override def visit[U](ref: AnyRef, init: => U): U = visit1[U](ref, () => init)
-
-    private def smartRef(ref: AnyRef): String = {
-      val t = new Throwable
-      t.fillInStackTrace()
-      val trace = t.getStackTrace
-      val opt = trace.collectFirst {
-        case ste if (ste.getMethodName == "force" || ste.getMethodName == "expand") && ste.getFileName != "Lazy.scala" =>
-          val clz = ste.getClassName
-          val i   = clz.lastIndexOf(".") + 1
-          val j   = clz.lastIndexOf("@", i)
-          val s   = if (j < 0) clz.substring(i) else clz.substring(i, j)
-          s"$s@${ref.hashCode().toHexString}"
-      }
-//      t.getStackTrace.foreach { ste =>
-//        val clz = ste.getClassName
-//        val fl  = ste.getFileName
-//        val m = ste.getMethodName
-//        val ln = ste.getLineNumber
-//      }
-      opt.getOrElse(ref.hashCode.toHexString)
-    }
 
     private def visit1[U](ref: AnyRef, init: () => U): U = {
       // log(s"visit  ${ref.hashCode.toHexString}")
@@ -245,7 +248,7 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
 //    }
   }
 
-  private final class OuterImpl(val graph: SynthGraph) extends Impl {
+  private final class OuterImpl extends Impl {
     builder =>
 
     def outer: OuterImpl = this
@@ -282,11 +285,11 @@ object SysSonUGenGraphBuilder /* extends UGenGraph.BuilderFactory */ {
     }
 
     override def visit[U](ref: AnyRef, init: => U): U = {
-      log(this, s"visit  ${ref.hashCode.toHexString}")
+      log(this, s"visit  ${smartRef(ref)}")
       sourceMap.getOrElse(ref, {
-        log(this, s"expand ${ref.hashCode.toHexString}...")
+        log(this, s"expand ${smartRef(ref)}...")
         val exp = init
-        log(this, s"...${ref.hashCode.toHexString} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
+        log(this, s"...${smartRef(ref)} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
         sourceMap += ref -> exp
         exp
       }).asInstanceOf[U] // not so pretty...
