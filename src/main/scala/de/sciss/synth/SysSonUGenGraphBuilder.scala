@@ -29,23 +29,12 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
     }
   }
 
-  private final class InnerImpl extends SysSonUGenGraphBuilder {
-    def expandIfGE(cases: List[IfCase[GE]]): GE = ???
-
-    override def visit[U](ref: AnyRef, init: => U): U = ???
-  }
-
-  private final class OuterImpl(graph: SynthGraph) extends SysSonUGenGraphBuilder {
+  private trait Impl extends SysSonUGenGraphBuilder {
     builder =>
 
-    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+    def build: UGenGraph
 
-    def build: UGenGraph = {
-      ???
-      buildGraph(graph)
-    }
-
-    private def buildGraph(g0: SynthGraph): UGenGraph = {
+    protected final def buildGraph(g0: SynthGraph): UGenGraph = {
       var g = g0
       var controlProxies = ISet.empty[ControlProxyLike]
       while (g.nonEmpty) {
@@ -54,6 +43,36 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
         g = SynthGraph(g.sources.foreach(_.force(builder))) // allow for further graphs being created
       }
       build(controlProxies)
+    }
+  }
+
+  private final class InnerImpl(graph: SynthGraph) extends Impl {
+    def build: UGenGraph = {
+      ???
+      buildGraph(graph)
+    }
+
+    def expandIfGE(cases: List[IfCase[GE]]): GE = {
+      // we would need to get the `ifCount` from parent
+      // and AND with the parent branch cond.
+      // Alternatively, we create a `Group` that will
+      // then be the node-ID for the parent to pause/resume.
+      // That way we can avoid the AND.
+      throw new NotImplementedError("Nested expandIfGE")
+      ???
+    }
+
+    override def visit[U](ref: AnyRef, init: => U): U = ???
+  }
+
+  private final class OuterImpl(graph: SynthGraph) extends Impl {
+    builder =>
+
+    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+
+    def build: UGenGraph = {
+      ???
+      buildGraph(graph)
     }
 
 //    private[this] var _level = 0
@@ -107,6 +126,14 @@ object SysSonUGenGraphBuilder extends UGenGraph.BuilderFactory {
         }
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
+        val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
+          controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
+        val child: Impl = new InnerImpl(graphC)
+        UGenGraph.use(child) {
+          child.build
+//          c.branch.expand(child)
+//          graphB  .expand(child)
+        }
 
         ???
       }
