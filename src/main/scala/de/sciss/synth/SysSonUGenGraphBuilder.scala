@@ -99,35 +99,35 @@ object SysSonUGenGraphBuilder {
 
     override def toString = s"SynthGraph.Builder@${hashCode.toHexString}"
 
-    final def build(g0: SynthGraph): Result = SynthGraph.use(builder) {
-      UGenGraph.use(builder) {
-        var _sources: Vec[Lazy] = g0.sources
-        controlProxies = g0.controlProxies
-        do {
-          sources = Vector.empty
-          val ctlProxiesCpy = controlProxies
-          var i = 0
-          val sz = _sources.size
-          while (i < sz) {
-            val source = _sources(i)
-            source.force(builder)
-            _sources(i) match {
-              case _: IfGEImpl =>
-                // XXX TODO --- what to do with the damn control proxies?
-                val graphC = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
-                val child  = new InnerImpl(builder, name = "continue")
-                _children ::= child.build(graphC)
-                i = sz    // "skip rest"
-              case _ =>
-            }
-            i += 1
+    final def buildInner(g0: SynthGraph): Result = {
+      var _sources: Vec[Lazy] = g0.sources
+      controlProxies = g0.controlProxies
+      do {
+        sources = Vector.empty
+        val ctlProxiesCpy = controlProxies
+        var i = 0
+        val sz = _sources.size
+        while (i < sz) {
+          val source = _sources(i)
+          source.force(builder)
+          _sources(i) match {
+            case _: IfGEImpl =>
+              // XXX TODO --- what to do with the damn control proxies?
+              val graphC = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
+              val child  = new InnerImpl(builder, name = "continue")
+              _children ::= child.build(graphC)
+              i = sz    // "skip rest"
+            case _ =>
           }
-          _sources = sources
-        } while (_sources.nonEmpty)
-        val ugenGraph = build(controlProxies)
-        ResultImpl(ugenGraph, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
-      }
+          i += 1
+        }
+        _sources = sources
+      } while (_sources.nonEmpty)
+      val ugenGraph = build(controlProxies)
+      ResultImpl(ugenGraph, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
     }
+
+    final def build(g0: SynthGraph): Result = run(buildInner(g0))
 
     final def run[A](thunk: => A): A = SynthGraph.use(builder) {
       UGenGraph.use(builder) {
@@ -193,11 +193,20 @@ object SysSonUGenGraphBuilder {
     final def expandIfCases(cases: List[IfCase[GE]]): Link = {
       val linkId = outer.allocLinkId()
       var condAcc: GE = 0
+      // Will be maximum across all branches.
+      // Note that branches with a smaller number
+      // of channels do not "wrap-extend" their
+      // signal as would be the case normally in
+      // ScalaCollider. Instead, they simply do
+      // not contribute to the higher channels.
+      // We can add the other behaviour later.
+      var numChannels = 0
       cases.zipWithIndex.foreach { case (c, ci) =>
         // make sure the condition is zero or one
         val condBin   = forceBinary(c.cond)
-        // then "bit-shift" it. XXX TODO --- does SuperCollider BinaryOpUGen implement bit-shift?
-        val condShift = if (ci == 0) condBin else condBin sig_== (1 << ci)
+        // then "bit-shift" it. XXX TODO --- does BinaryOpUGen needs to implement bit-shift
+        // https://github.com/Sciss/ScalaColliderUGens/issues/23
+        val condShift = if (ci == 0) condBin else condBin * (1 << ci)
         // then collect the bits in a "bit-field"
         condAcc       = if (ci == 0) condBin else condAcc | condShift
         // then the branch condition is met when the field equals the shifted single condition
@@ -218,10 +227,16 @@ object SysSonUGenGraphBuilder {
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
         val child = new InnerImpl(builder, name = s"inner{if $linkId case $ci}")
-        _children ::= child.build(graphC)
+        val childRes = child.run {
+          val res         = child.buildInner(graphC)
+          val sig         = c.res.expand
+          val childChans  = sig.outputs.size
+          numChannels     = math.max(numChannels, childChans)
+          res
+        }
+        _children ::= childRes
       }
-      println("WARNING: If-cases numChannels not yet determined")
-      Link(id = linkId, rate = audio, numChannels = 1 /* !!! */)  // XXX TODO --- how to get rate and numChannels?
+      Link(id = linkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
     }
   }
 

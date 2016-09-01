@@ -58,6 +58,7 @@ object Scenario {
         Dust.ar(freq)
       } Else {
         WhiteNoise.ar
+//        WhiteNoise.ar(Seq.fill(2)(1))
       }
 
       Out.ar(0, Pan2.ar(res0 * amp))
