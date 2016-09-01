@@ -15,12 +15,11 @@
 package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.modular.{IfCase, IfRef}
+import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl, IfRef}
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
-import scala.collection.immutable.{Set => ISet}
-import scala.collection.mutable
+import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object SysSonUGenGraphBuilder {
   final case class Link(id: Int, numChannels: Int)
@@ -95,18 +94,34 @@ object SysSonUGenGraphBuilder {
     protected var _linkIn   = List.empty[Link]
     protected var _linkOut  = List.empty[Link]
 
-    private[this] var sources         = mutable.Buffer.empty[Lazy]    // g0.sources
+    private[this] var sources         = Vec.empty[Lazy]    // g0.sources
     private[this] var controlProxies  = ISet.empty[ControlProxyLike]  // g0.controlProxies
 
     override def toString = s"SynthGraph.Builder@${hashCode.toHexString}"
 
     final def build(g0: SynthGraph): Result = SynthGraph.use(builder) {
       UGenGraph.use(builder) {
-        var _sources: Iterable[Lazy] = g0.sources
+        var _sources: Vec[Lazy] = g0.sources
         controlProxies = g0.controlProxies
         do {
-          if (sources.nonEmpty) sources = mutable.Buffer.empty
-          _sources.foreach(_.force(builder))
+          sources = Vector.empty
+          val ctlProxiesCpy = controlProxies
+          var i = 0
+          val sz = _sources.size
+          while (i < sz) {
+            val source = _sources(i)
+            source.force(builder)
+            _sources(i) match {
+              case _: IfGEImpl =>
+                // XXX TODO --- what to do with the damn control proxies?
+                val graphC = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
+                val child  = new InnerImpl(builder, name = "continue")
+                _children ::= child.build(graphC)
+                i = sz    // "skip rest"
+              case _ =>
+            }
+            i += 1
+          }
           _sources = sources
         } while (_sources.nonEmpty)
         val ugenGraph = build(controlProxies)
@@ -122,7 +137,8 @@ object SysSonUGenGraphBuilder {
 
     // ---- SynthGraph.Builder ----
 
-    final def addLazy(g: Lazy): Unit = sources += g
+//    final def addLazy(g: Lazy): Unit = sources += g
+    final def addLazy(g: Lazy): Unit = sources :+= g
 
     final def addControlProxy(proxy: ControlProxyLike): Unit = controlProxies += proxy
 
@@ -162,6 +178,8 @@ object SysSonUGenGraphBuilder {
           _linkOut ::= link
           val inExp = in.expand
           (link, inExp)
+
+        case ref: IfRef => ???
       }
 
     // ---- UGenGraph.Builder ----
@@ -191,10 +209,9 @@ object SysSonUGenGraphBuilder {
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child = new InnerImpl(builder, ifId = ifId, caseId = ci)
+        val child = new InnerImpl(builder, name = s"inner{if $ifId case $ci}")
         _children ::= child.build(graphC)
       }
-      ??? // XXX TODO --- start next graph level
       IfRef(ifId)
     }
   }
@@ -214,12 +231,12 @@ object SysSonUGenGraphBuilder {
     opt.getOrElse(ref.hashCode.toHexString)
   }
 
-  private final class InnerImpl(parent: Impl, ifId: Int, caseId: Int)
+  private final class InnerImpl(parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
 
-    override def toString = s"inner{if $ifId case $caseId}"
+    override def toString = name
 
     override def visit[U](ref: AnyRef, init: => U): U = visit1[U](ref, () => init)
 
