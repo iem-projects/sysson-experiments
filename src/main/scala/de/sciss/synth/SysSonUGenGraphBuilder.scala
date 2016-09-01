@@ -27,12 +27,8 @@ object SysSonUGenGraphBuilder {
   trait Result {
     def graph: UGenGraph
 
-    def linkOut: List[Link]
-
-    // XXX TODO --- since all synths will be started within the same group,
-    // we don't actually need to remember the link-in list, because if
-    // we set the control on the group both sink and source will see it.
-    def linkIn: List[Link]
+    /** Outgoing links for this sub-graph. */
+    def links: List[Link]
 
     def children: List[Result]
   }
@@ -70,7 +66,7 @@ object SysSonUGenGraphBuilder {
 
   private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
 
-  private final case class ResultImpl(graph: UGenGraph, linkIn: List[Link], linkOut: List[Link],
+  private final case class ResultImpl(graph: UGenGraph, /* linkIn: List[Link], */ links: List[Link],
                                       children: List[Result]) extends Result
 
   /*
@@ -91,7 +87,7 @@ object SysSonUGenGraphBuilder {
     // ---- impl ----
 
     protected var _children = List.empty[Result]
-    protected var _linkIn   = List.empty[Link]
+//    protected var _linkIn   = List.empty[Link]
     protected var _linkOut  = List.empty[Link]
 
     private[this] var sources         = Vec.empty[Lazy]    // g0.sources
@@ -124,7 +120,7 @@ object SysSonUGenGraphBuilder {
         _sources = sources
       } while (_sources.nonEmpty)
       val ugenGraph = build(controlProxies)
-      ResultImpl(ugenGraph, linkIn = _linkIn.reverse, linkOut = _linkOut.reverse, children = _children.reverse)
+      ResultImpl(ugenGraph, /* linkIn = _linkIn.reverse, */ links = _linkOut.reverse, children = _children.reverse)
     }
 
     final def build(g0: SynthGraph): Result = run(buildInner(g0))
@@ -273,7 +269,7 @@ object SysSonUGenGraphBuilder {
           init()
         } { case (link, in) =>
           log(this, s"...${smartRef(ref)} -> found in parent: $link")
-          _linkIn ::= link
+//          _linkIn ::= link
           in
         }
         sourceMap += ref -> exp
@@ -316,7 +312,7 @@ object SysSonUGenGraphBuilder {
     case _        => x.toString
   }
 
-  var showLog = true
+  var showLog = false
 
   @elidable(elidable.CONFIG) private def log(builder: Impl, what: => String): Unit =
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")

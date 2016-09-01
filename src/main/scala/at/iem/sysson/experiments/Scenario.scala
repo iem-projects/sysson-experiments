@@ -83,19 +83,39 @@ object Scenario {
 
     print("top", 0, ug)
 
-//    import Ops._
-//    Server.run { s =>
-//      println("Should hear WhiteNoise.")
-//      val syn = sd.play(args = List("freq" -> 0))
-//      Thread.sleep(2000)
-//      println("Should hear Dust.")
-//      syn.set("freq" -> 101)
-//      Thread.sleep(2000)
-//      println("Should hear SinOsc.")
-//      syn.set("freq" -> 1001)
-//      Thread.sleep(2000)
-//      s.quit()
-//      sys.exit()
-//    }
+    def play(res0: SysSonUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
+      val s     = Server.default
+      val g     = Group(s)
+
+
+
+      def loop(res: SysSonUGenGraphBuilder.Result, subCnt: Int) = {
+        val name  = s"test-$subCnt"
+        val sd    = SynthDef(name, res.graph)
+        sd.recvMsg
+        ???
+      }
+
+      res0.graph
+      res0.links
+      res0.children
+
+      ???
+    }
+
+    Server.run { s =>
+      println("Should hear WhiteNoise.")
+      val syn = play(ug, args = List("freq" -> 0))
+      import Ops._
+      Thread.sleep(2000)
+      println("Should hear Dust.")
+      syn.set("freq" -> 101)
+      Thread.sleep(2000)
+      println("Should hear SinOsc.")
+      syn.set("freq" -> 1001)
+      Thread.sleep(2000)
+      s.quit()
+      sys.exit()
+    }
   }
 }
