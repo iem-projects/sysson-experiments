@@ -15,8 +15,8 @@
 package de.sciss.synth.ugen.impl.modular
 
 import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, If, IfBuilder}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, UnaryOpUGen}
-import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGen, UGenGraph, UGenIn, UGenInLike, UndefinedRate, audio, ugen}
+import de.sciss.synth.UGenGraph.Builder
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 
@@ -75,54 +75,34 @@ final case class IfImpl[A](cases: List[IfCase[A]]) extends IfImplLike[A]
 
 final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
 
+final case class IfRef(id: Int)
+
 final case class IfUnitImpl(cases: List[IfCase[Any]]) extends Lazy.Expander[Unit] {
   def rate: MaybeRate = UndefinedRate // XXX TODO -- ok?
 
   protected def makeUGens: Unit = ???
 }
 
-final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
+final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE with Lazy {
   // integer numbers can be represented as 32-bit floats without loss up to 2^24 - 1
   require(cases.size < 24, s"IfGE -- number of branches cannot be >= 24 (${cases.size})")
 
+  // same as `Lazy.Expander`, but we don't use its implementation of `expand`
+  @transient private[this] lazy val ref = new AnyRef
+
+  // ---- constructor ----
+  SynthGraph.builder.addLazy(this)
+
   def rate: MaybeRate = MaybeRate.max_?(cases.map(_.res.rate): _*)
 
-  protected def makeUGens: UGenInLike = UGenGraph.builder match {
+  private[synth] def expand: UGenInLike =
+    UGenGraph.builder.visit(ref, throw new IllegalStateException("IfGE - encountering `expand` without prior `force`"))
+
+  // the `expandIfCases` will store the reference!
+  private[synth] def force(b: Builder): Unit = UGenGraph.builder match {
     case sysson: SysSonUGenGraphBuilder =>
-      // makeUGens(sysson)
-      sysson.expandIfGE(cases)
+      sysson.visit(ref, sysson.expandIfCases(cases))
+
     case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
   }
-
-//  private def makeUGens(sysson: SysSonUGenGraphBuilder): UGenInLike = {
-//    val id = sysson.allocSubGraph()
-//
-//    val (_, res) = ((0: GE, 0: GE) /: cases) { case ((condAcc, resAcc), c) =>
-//      val bg = c.branch
-//      sysson.nested {
-//        bg.sources.foreach { lz =>
-//          lz.force(sysson)
-//        }
-//        val resOuts0 = c.res.expand.flatOutputs // XXX TODO --- should we allow bubbling here?
-//        val resOuts  = ugen.matchRateFrom(resOuts0, 0, audio)
-//        val bus      = ??? : UGenIn
-//        UGen.ZeroOut("Out", audio, bus +: resOuts, isIndividual = true)
-//      }
-//      val condNow: GE = condAcc match {
-//        case Constant(0)  => c.cond
-//        case cPrev        => UnaryOpUGen.Not.make(cPrev) & c.cond
-//      }
-//      val condNext: GE = condAcc match {
-//        case Constant(0)  => c.cond
-//        case cPrev        => cPrev | c.cond
-//      }
-//      val resNow = c.res * condNow
-//      val resNext: GE = resAcc match {
-//        case Constant(0)  => resNow
-//        case resPrev      => resPrev + resNow
-//      }
-//      (condNext, resNext)
-//    }
-//    res
-//  }
 }

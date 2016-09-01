@@ -15,7 +15,7 @@
 package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.modular.IfCase
+import de.sciss.synth.ugen.impl.modular.{IfCase, IfRef}
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
@@ -166,7 +166,7 @@ object SysSonUGenGraphBuilder {
 
     // ---- UGenGraph.Builder ----
 
-    final def expandIfGE(cases: List[IfCase[GE]]): GE = {
+    final def expandIfCases(cases: List[IfCase[GE]]): IfRef = {
       val ifId = outer.allocIfId()
       var condAcc: GE = 0
       cases.zipWithIndex.foreach { case (c, ci) =>
@@ -194,7 +194,8 @@ object SysSonUGenGraphBuilder {
         val child = new InnerImpl(builder, ifId = ifId, caseId = ci)
         _children ::= child.build(graphC)
       }
-      ugen.DC.ar(0) // XXX TODO
+      ??? // XXX TODO --- start next graph level
+      IfRef(ifId)
     }
   }
 
@@ -290,5 +291,5 @@ object SysSonUGenGraphBuilder {
 trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
-  def expandIfGE(cases: List[IfCase[GE]]): GE
+  def expandIfCases(cases: List[IfCase[GE]]): IfRef
 }
