@@ -22,7 +22,9 @@ import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object SysSonUGenGraphBuilder {
-  final case class Link(id: Int, rate: Rate, numChannels: Int)
+  final case class Link(id: Int, rate: Rate, numChannels: Int) {
+    require(rate == control || rate == audio, s"Unsupported link rate $rate")
+  }
 
   trait Result {
     /** For every child whose `id` is greater than
@@ -53,8 +55,8 @@ object SysSonUGenGraphBuilder {
     b.build(graph)
   }
 
-  def pauseNodeCtlName(linkId: Int): String =
-    s"$$if$linkId"    // e.g. first if block third branch is `$if0_2n`
+  def pauseNodeCtlName(id: Int): String =
+    s"$$if$id"    // e.g. first if block third branch is `$if0_2n`
 
 //  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
 //    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
@@ -63,8 +65,8 @@ object SysSonUGenGraphBuilder {
 //    s"$$if${linkId}_${caseId}b"
 
   // single control for setting the bus index
-  def linkCtlName(linkId: Int): String =
-    s"$$ln$linkId"
+  def linkCtlName(id: Int): String =
+    s"$$ln$id"
 
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
@@ -177,7 +179,8 @@ object SysSonUGenGraphBuilder {
             val linkId      = outer.allocId()
             // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
             val linkRate    = sig.rate match {
-              case r: Rate => r
+              case `scalar` => control
+              case r: Rate  => r
               case _ => throw new IllegalArgumentException("Cannot refer to UGen group with mixed rates across branches")
             }
             val res         = Link(id = linkId, rate = linkRate, numChannels = numChannels)

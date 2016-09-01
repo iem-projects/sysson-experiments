@@ -17,6 +17,7 @@ package at.iem.sysson.experiments
 import de.sciss.synth._
 import ugen._
 import de.sciss.file._
+import de.sciss.osc
 
 object Scenario {
   def main(args: Array[String]): Unit = {
@@ -85,37 +86,74 @@ object Scenario {
 
     def play(res0: SysSonUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
       val s     = Server.default
-      val g     = Group(s)
+      var defs  = List.empty[SynthDef]
+      var defSz = 0   // used to create unique def names
+      var msgs  = List.empty[osc.Message]
+      var ctl   = List.empty[ControlSet]
+      var buses = List.empty[Bus]
 
+      def loop(child: SysSonUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
+        val name        = s"test-$defSz"
+        val sd          = SynthDef(name, child.graph)
+        defs          ::= sd
+        defSz          += 1
+        val syn         = Synth(s)
+        val hasChildren = child.children.isEmpty
+        val group       = if (!hasChildren) parent else {
+          val g   = Group(s)
+          msgs  ::= g.newMsg(parent, addAction)
+          g
+        }
+        val node  = if (hasChildren) group else syn
+        msgs ::= syn.newMsg(name, target = group, addAction = if (hasChildren) addToHead else addAction)
 
+        child.children.foreach { cc =>
+          val ccn = loop(cc, group, addToTail)
+          ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
+        }
 
-      def loop(res: SysSonUGenGraphBuilder.Result, subCnt: Int) = {
-        val name  = s"test-$subCnt"
-        val sd    = SynthDef(name, res.graph)
-        sd.recvMsg
-        ???
+        child.links.foreach { link =>
+          val bus = link.rate match {
+            case `audio`    => Bus.audio  (s, numChannels = link.numChannels)
+            case `control`  => Bus.control(s, numChannels = link.numChannels)
+            case other      => throw new IllegalArgumentException(s"Unsupported link rate $other")
+          }
+          buses ::= bus
+          ctl   ::= SysSonUGenGraphBuilder.linkCtlName(link.id) -> bus.index
+        }
+
+        node
       }
 
-      res0.graph
-      res0.links
-      res0.children
+      val mainNode = loop(res0, parent = s.defaultGroup, addAction = addToHead)
+      mainNode.onEnd {
+        buses.foreach(_.free())
+      }
 
-      ???
+      msgs ::= mainNode.setMsg(ctl.reverse: _*)
+      val b1 = osc.Bundle.now(msgs.reverse: _*)
+      val defL :: defI = defs
+      val async = defL.recvMsg(b1) :: defI.map(_.recvMsg)
+      val b2 = osc.Bundle.now(async.reverse: _*)
+
+      s ! b2
+      mainNode
     }
 
-//    Server.run { s =>
-//      println("Should hear WhiteNoise.")
-//      val syn = play(ug, args = List("freq" -> 0))
-//      import Ops._
-//      Thread.sleep(2000)
-//      println("Should hear Dust.")
-//      syn.set("freq" -> 101)
-//      Thread.sleep(2000)
-//      println("Should hear SinOsc.")
-//      syn.set("freq" -> 1001)
-//      Thread.sleep(2000)
-//      s.quit()
-//      sys.exit()
-//    }
+    Server.run { s =>
+      s.dumpOSC()
+      println("Should hear WhiteNoise.")
+      val syn = play(ug, args = List("freq" -> 0))
+      import Ops._
+      Thread.sleep(2000)
+      println("Should hear Dust.")
+      syn.set("freq" -> 101)
+      Thread.sleep(2000)
+      println("Should hear SinOsc.")
+      syn.set("freq" -> 1001)
+      Thread.sleep(2000)
+      s.quit()
+      sys.exit()
+    }
   }
 }
