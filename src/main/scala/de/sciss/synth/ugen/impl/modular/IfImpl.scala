@@ -75,8 +75,6 @@ final case class IfImpl[A](cases: List[IfCase[A]]) extends IfImplLike[A]
 
 final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
 
-final case class IfRef(id: Int)
-
 final case class IfUnitImpl(cases: List[IfCase[Any]]) extends Lazy.Expander[Unit] {
   def rate: MaybeRate = UndefinedRate // XXX TODO -- ok?
 

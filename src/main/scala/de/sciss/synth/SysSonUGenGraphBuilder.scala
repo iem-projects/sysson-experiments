@@ -15,14 +15,14 @@
 package de.sciss.synth
 
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl, IfRef}
+import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object SysSonUGenGraphBuilder {
-  final case class Link(id: Int, numChannels: Int)
+  final case class Link(id: Int, rate: Rate, numChannels: Int)
 
   trait Result {
     def graph: UGenGraph
@@ -42,11 +42,11 @@ object SysSonUGenGraphBuilder {
     b.build(graph)
   }
 
-  def pauseNodeCtlName(ifId: Int, caseId: Int): String =
-    s"$$if${ifId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
+  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
+    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
 
-  def pauseBusCtlName(ifId: Int, caseId: Int): String =
-    s"$$if${ifId}_${caseId}b"
+  def pauseBusCtlName(linkId: Int, caseId: Int): String =
+    s"$$if${linkId}_${caseId}b"
 
   def linkCtlName(linkId: Int): String =
     s"$$lnk$linkId"
@@ -146,55 +146,52 @@ object SysSonUGenGraphBuilder {
 
     private[this] var linkMap = Map.empty[AnyRef, Link]
 
+    private def expandLinkSink(link: Link): (Link, UGenInLike) = {
+      val ctlName   = linkCtlName(link.id)
+      val ctl       = ctlName.ir    // link-bus
+      val in        = In(link.rate, bus = ctl, numChannels = link.numChannels)
+      val inExp = in.expand
+      (link, inExp)
+    }
+
     final def tryRefer(ref: AnyRef): Option[(Link, UGenInLike)] =
       sourceMap.get(ref).collect {
         case sig: UGenInLike =>
           val link        = linkMap.getOrElse(ref, {
             val numChannels = sig.outputs.size
             val linkId      = outer.allocLinkId()
-            val res         = Link(id = linkId, numChannels = numChannels)
+            // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
+            val linkRate    = sig.rate match {
+              case r: Rate => r
+              case _ => throw new IllegalArgumentException("Cannot refer to UGen group with mixed rates across branches")
+            }
+            val res         = Link(id = linkId, rate = linkRate, numChannels = numChannels)
             linkMap += ref -> res
+            _linkOut ::= res
+            val ctlName     = linkCtlName(linkId)
+            // Add a control and `Out` to this (parent) graph.
+            // This is super tricky -- we have to encapsulate
+            // in a new synth graph because otherwise GE will
+            // end up in the caller's synth graph; there is
+            // no way we can catch them in our own outer synth graph,
+            // so we must then force them explicitly!
+            run {
+              val ctl = ctlName.ir    // link-bus
+              Out(linkRate, bus = ctl, in = sig)
+            }
             res
           })
-          val ctlName     = linkCtlName(link.id)
-          // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
-          val rate        = sig.rate match {
-            case r: Rate => r
-            case _ => throw new IllegalArgumentException("Cannot refer to UGen group with mixed rates across branches")
-          }
-          // Add a control and `Out` to this (parent) graph.
-          // This is super tricky -- we have to encapsulate
-          // in a new synth graph because otherwise GE will
-          // end up in the caller's synth graph; there is
-          // no way we can catch them in our own outer synth graph,
-          // so we must then force them explicitly!
-          run {
-            val ctl = ctlName.ir    // link-bus
-            Out(rate, bus = ctl, in = sig)
-          }
-          // then add a control and `In` to the caller (child) graph
-          val ctl = ctlName.ir    // link-bus
-          val in  = In(rate, bus = ctl, numChannels = link.numChannels)
-          _linkOut ::= link
-          val inExp = in.expand
-          (link, inExp)
+          expandLinkSink(link)
 
-        case ref: IfRef =>
-          /*
-            what to do:
-            - remove allocIfId, just use allocLinkId
-            - remove IfRef, just uses already the link
-            - correct the control name in the branch outs
-            - add rate argument to LinkId
-          
-           */
-          ???
+        case link: Link =>
+          // if reference found
+          expandLinkSink(link)
       }
 
     // ---- UGenGraph.Builder ----
 
-    final def expandIfCases(cases: List[IfCase[GE]]): IfRef = {
-      val ifId = outer.allocIfId()
+    final def expandIfCases(cases: List[IfCase[GE]]): Link = {
+      val linkId = outer.allocLinkId()
       var condAcc: GE = 0
       cases.zipWithIndex.foreach { case (c, ci) =>
         // make sure the condition is zero or one
@@ -206,22 +203,24 @@ object SysSonUGenGraphBuilder {
         // then the branch condition is met when the field equals the shifted single condition
         val condEq    = if (ci == 0) condBin else condAcc sig_== condShift
         import ugen._
-        val nodeCtl = pauseNodeCtlName(ifId, ci)
-        val busCtl  = pauseBusCtlName (ifId, ci)
+        val nodeCtl = pauseNodeCtlName(linkId, ci)
+        val busCtl  = pauseBusCtlName (linkId, ci)
         Pause.kr(gate = condEq, node = nodeCtl.ir)
         Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
+        val resCtl = linkCtlName(linkId)
         val graphB = SynthGraph {
-          val resBus = s"$$if${ifId}r".ir
-          Out.ar(resBus, c.res)
+          val resBus = resCtl.ir
+          val rate   = ??? : Rate  // XXX TODO --- how to get rate?
+          Out(rate, resBus, c.res)
         }
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child = new InnerImpl(builder, name = s"inner{if $ifId case $ci}")
+        val child = new InnerImpl(builder, name = s"inner{if $linkId case $ci}")
         _children ::= child.build(graphC)
       }
-      IfRef(ifId)
+      Link(id = linkId, rate = ???, numChannels = ???)  // XXX TODO --- how to get rate and numChannels?
     }
   }
 
@@ -276,14 +275,6 @@ object SysSonUGenGraphBuilder {
 //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
 
-    private[this] var ifCount = 0
-
-    def allocIfId(): Int = {
-      val res = ifCount
-      ifCount += 1
-      res
-    }
-
     private[this] var linkCount = 0
 
     def allocLinkId(): Int = {
@@ -315,7 +306,9 @@ object SysSonUGenGraphBuilder {
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
 }
 trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
+  import SysSonUGenGraphBuilder.Link
+
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
-  def expandIfCases(cases: List[IfCase[GE]]): IfRef
+  def expandIfCases(cases: List[IfCase[GE]]): Link
 }
