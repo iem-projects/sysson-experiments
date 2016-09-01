@@ -48,10 +48,24 @@ object Scenario {
       Out.ar(0, res0 * amp)
     }
 
+    case class LazyControl(rate: Rate, name: String, default: Double = 0.0) extends GE with Lazy {
+      def expand: UGenInLike = UGenGraph.builder.visit(this, init)
+
+      private def init: UGenInLike = rate match {
+        case `scalar`   => name.ir(default)
+        case `control`  => name.kr(default)
+        case `audio`    => name.ar(default)
+        case _          => sys.error(s"Unsupported LazyControl rate $rate")
+      }
+
+      def force(b: UGenGraph.Builder): Unit = ()
+    }
+
     val sg2 = SynthGraph {
       val amp : GE = "amp" .kr(0.2)
 //      val freq: GE = "freq".kr
-      val freq: GE = ExpRand(10, 10000) // XXX TODO --- control currently doesn't work in child branches
+//      val freq: GE = ExpRand(10, 10000) // XXX TODO --- control currently doesn't work in child branches
+      val freq: GE = LazyControl(control, "freq")
 
       val res0: GE = If (freq > 1000) Then {
         SinOsc.ar(freq)
@@ -89,7 +103,7 @@ object Scenario {
       var defs  = List.empty[SynthDef]
       var defSz = 0   // used to create unique def names
       var msgs  = List.empty[osc.Message]
-      var ctl   = List.empty[ControlSet]
+      var ctl   = args.reverse  // init
       var buses = List.empty[Bus]
 
       def loop(child: SysSonUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
