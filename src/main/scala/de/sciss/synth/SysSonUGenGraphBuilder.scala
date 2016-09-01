@@ -209,9 +209,9 @@ object SysSonUGenGraphBuilder {
         Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
         val resCtl = linkCtlName(linkId)
         val graphB = SynthGraph {
-          val resBus = resCtl.ir
-          val rate   = ??? : Rate  // XXX TODO --- how to get rate?
-          Out(rate, resBus, c.res)
+          val linkBus   = resCtl.ir
+          val linkRate  = audio // XXX TODO --- how to get rate?
+          Out(linkRate, linkBus, c.res)
         }
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
@@ -220,7 +220,8 @@ object SysSonUGenGraphBuilder {
         val child = new InnerImpl(builder, name = s"inner{if $linkId case $ci}")
         _children ::= child.build(graphC)
       }
-      Link(id = linkId, rate = ???, numChannels = ???)  // XXX TODO --- how to get rate and numChannels?
+      println("WARNING: If-cases numChannels not yet determined")
+      Link(id = linkId, rate = audio, numChannels = 1 /* !!! */)  // XXX TODO --- how to get rate and numChannels?
     }
   }
 
