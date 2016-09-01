@@ -179,7 +179,16 @@ object SysSonUGenGraphBuilder {
           val inExp = in.expand
           (link, inExp)
 
-        case ref: IfRef => ???
+        case ref: IfRef =>
+          /*
+            what to do:
+            - remove allocIfId, just use allocLinkId
+            - remove IfRef, just uses already the link
+            - correct the control name in the branch outs
+            - add rate argument to LinkId
+          
+           */
+          ???
       }
 
     // ---- UGenGraph.Builder ----
