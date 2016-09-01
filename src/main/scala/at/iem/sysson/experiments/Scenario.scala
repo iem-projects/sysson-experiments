@@ -103,19 +103,19 @@ object Scenario {
       ???
     }
 
-    Server.run { s =>
-      println("Should hear WhiteNoise.")
-      val syn = play(ug, args = List("freq" -> 0))
-      import Ops._
-      Thread.sleep(2000)
-      println("Should hear Dust.")
-      syn.set("freq" -> 101)
-      Thread.sleep(2000)
-      println("Should hear SinOsc.")
-      syn.set("freq" -> 1001)
-      Thread.sleep(2000)
-      s.quit()
-      sys.exit()
-    }
+//    Server.run { s =>
+//      println("Should hear WhiteNoise.")
+//      val syn = play(ug, args = List("freq" -> 0))
+//      import Ops._
+//      Thread.sleep(2000)
+//      println("Should hear Dust.")
+//      syn.set("freq" -> 101)
+//      Thread.sleep(2000)
+//      println("Should hear SinOsc.")
+//      syn.set("freq" -> 1001)
+//      Thread.sleep(2000)
+//      s.quit()
+//      sys.exit()
+//    }
   }
 }

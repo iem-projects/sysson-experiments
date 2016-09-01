@@ -25,11 +25,26 @@ object SysSonUGenGraphBuilder {
   final case class Link(id: Int, rate: Rate, numChannels: Int)
 
   trait Result {
+    /** For every child whose `id` is greater than
+      * or equal to zero, a control must be set
+      * based on `pauseNodeCtlName`.
+      */
+    def id: Int
+
     def graph: UGenGraph
 
-    /** Outgoing links for this sub-graph. */
+    /** Outgoing links.
+      * To "play" the result, for each link
+      * a corresponding bus must be allocated
+      * and set through a control obtained
+      * with `linkCtlName(id)`.
+      */
     def links: List[Link]
 
+    /** For each child, a synth must be created and nested
+      * in the parent group. The synth's id must be
+      * communicated through `pauseNodeCtlName`
+      */
     def children: List[Result]
   }
 
@@ -38,14 +53,18 @@ object SysSonUGenGraphBuilder {
     b.build(graph)
   }
 
-  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
-    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
+  def pauseNodeCtlName(linkId: Int): String =
+    s"$$if$linkId"    // e.g. first if block third branch is `$if0_2n`
 
-  def pauseBusCtlName(linkId: Int, caseId: Int): String =
-    s"$$if${linkId}_${caseId}b"
+//  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
+//    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
+//
+//  def pauseBusCtlName(linkId: Int, caseId: Int): String =
+//    s"$$if${linkId}_${caseId}b"
 
+  // single control for setting the bus index
   def linkCtlName(linkId: Int): String =
-    s"$$lnk$linkId"
+    s"$$ln$linkId"
 
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
@@ -66,7 +85,7 @@ object SysSonUGenGraphBuilder {
 
   private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
 
-  private final case class ResultImpl(graph: UGenGraph, /* linkIn: List[Link], */ links: List[Link],
+  private final case class ResultImpl(id: Int, graph: UGenGraph, links: List[Link],
                                       children: List[Result]) extends Result
 
   /*
@@ -83,12 +102,12 @@ object SysSonUGenGraphBuilder {
     // ---- abstract ----
 
     def outer: OuterImpl
+    def childId: Int
 
     // ---- impl ----
 
-    protected var _children = List.empty[Result]
-//    protected var _linkIn   = List.empty[Link]
-    protected var _linkOut  = List.empty[Link]
+    protected final var _children = List.empty[Result]
+    protected final var _links    = List.empty[Link]
 
     private[this] var sources         = Vec.empty[Lazy]    // g0.sources
     private[this] var controlProxies  = ISet.empty[ControlProxyLike]  // g0.controlProxies
@@ -109,8 +128,8 @@ object SysSonUGenGraphBuilder {
           _sources(i) match {
             case _: IfGEImpl =>
               // XXX TODO --- what to do with the damn control proxies?
-              val graphC = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
-              val child  = new InnerImpl(builder, name = "continue")
+              val graphC  = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
+              val child   = new InnerImpl(childId = -1, parent = builder, name = "continue")
               _children ::= child.build(graphC)
               i = sz    // "skip rest"
             case _ =>
@@ -120,7 +139,7 @@ object SysSonUGenGraphBuilder {
         _sources = sources
       } while (_sources.nonEmpty)
       val ugenGraph = build(controlProxies)
-      ResultImpl(ugenGraph, /* linkIn = _linkIn.reverse, */ links = _linkOut.reverse, children = _children.reverse)
+      ResultImpl(id = childId, graph = ugenGraph, links = _links.reverse, children = _children.reverse)
     }
 
     final def build(g0: SynthGraph): Result = run(buildInner(g0))
@@ -155,7 +174,7 @@ object SysSonUGenGraphBuilder {
         case sig: UGenInLike =>
           val link        = linkMap.getOrElse(ref, {
             val numChannels = sig.outputs.size
-            val linkId      = outer.allocLinkId()
+            val linkId      = outer.allocId()
             // an undefined rate - which we forbid - can only occur with mixed UGenInGroup
             val linkRate    = sig.rate match {
               case r: Rate => r
@@ -163,7 +182,7 @@ object SysSonUGenGraphBuilder {
             }
             val res         = Link(id = linkId, rate = linkRate, numChannels = numChannels)
             linkMap += ref -> res
-            _linkOut ::= res
+            _links ::= res
             val ctlName     = linkCtlName(linkId)
             // Add a control and `Out` to this (parent) graph.
             // This is super tricky -- we have to encapsulate
@@ -187,7 +206,7 @@ object SysSonUGenGraphBuilder {
     // ---- UGenGraph.Builder ----
 
     final def expandIfCases(cases: List[IfCase[GE]]): Link = {
-      val linkId = outer.allocLinkId()
+      val resultLinkId = outer.allocId()
       var condAcc: GE = 0
       // Will be maximum across all branches.
       // Note that branches with a smaller number
@@ -208,21 +227,22 @@ object SysSonUGenGraphBuilder {
         // then the branch condition is met when the field equals the shifted single condition
         val condEq    = if (ci == 0) condBin else condAcc sig_== condShift
         import ugen._
-        val nodeCtl = pauseNodeCtlName(linkId, ci)
-        val busCtl  = pauseBusCtlName (linkId, ci)
+        val childId = outer.allocId()
+        val nodeCtl = pauseNodeCtlName(childId)
+//        val busCtl  = pauseBusCtlName (resultLinkId, ci)
         Pause.kr(gate = condEq, node = nodeCtl.ir)
-        Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
-        val resCtl = linkCtlName(linkId)
+//        Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
+        val resultCtl = linkCtlName(resultLinkId)
         val graphB = SynthGraph {
-          val linkBus   = resCtl.ir
-          val linkRate  = audio // XXX TODO --- how to get rate?
-          Out(linkRate, linkBus, c.res)
+          val resultBus   = resultCtl.ir
+          val resultRate  = audio // XXX TODO --- how to get rate?
+          Out(resultRate, resultBus, c.res)
         }
         // now call `UGenGraph.use()` with a child builder, and expand
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child = new InnerImpl(builder, name = s"inner{if $linkId case $ci}")
+        val child   = new InnerImpl(childId = childId, parent = builder, name = s"inner{if $resultLinkId case $ci}")
         val childRes = child.run {
           val res         = child.buildInner(graphC)
           val sig         = c.res.expand
@@ -232,7 +252,15 @@ object SysSonUGenGraphBuilder {
         }
         _children ::= childRes
       }
-      Link(id = linkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
+
+      if (numChannels > 0) {
+        val idSelBranch   = outer.allocId()
+        val linkSelBranch = Link(id = idSelBranch, rate = control, numChannels = 1)
+        val ctlSelBranch  = linkCtlName(idSelBranch)
+        _links           ::= linkSelBranch
+        Out.kr(bus = ctlSelBranch.ir, in = condAcc)
+      }
+      Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
     }
   }
 
@@ -251,7 +279,7 @@ object SysSonUGenGraphBuilder {
     opt.getOrElse(ref.hashCode.toHexString)
   }
 
-  private final class InnerImpl(parent: Impl, name: String)
+  private final class InnerImpl(val childId: Int, parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -283,15 +311,17 @@ object SysSonUGenGraphBuilder {
     builder =>
 
     def outer: OuterImpl = this
+    def childId = -1
 
-//    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
+    //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
 
-    private[this] var linkCount = 0
+    private[this] var idCount = 0
 
-    def allocLinkId(): Int = {
-      val res = linkCount
-      linkCount += 1
+    /** Allocates a unique increasing identifier. */
+    def allocId(): Int = {
+      val res = idCount
+      idCount += 1
       res
     }
 
