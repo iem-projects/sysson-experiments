@@ -139,10 +139,11 @@ object SysSonUGenGraphBuilder {
         // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
         // I.e. x & 7 == 4
         if (selectedBranchId < 0) errorOutsideBranch()
-        val ctlName = linkCtlName(selectedBranchId)
-        val selBus  = ctlName.ir
+        val selCtlName  = linkCtlName(selectedBranchId)
+        val selBus      = selCtlName.ir
         val condAcc = In.kr(selBus)
         condAcc.poll(4, "cond-in")
+        selBus .poll(4, "cond-in-bus")
         condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
       }
 
@@ -298,11 +299,15 @@ object SysSonUGenGraphBuilder {
 
       val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
       _links ::= linkSelBranch
-      val ctlSelBranch  = linkCtlName(selBranchId)
+      val selCtlName  = linkCtlName(selBranchId)
+      val selBus      = selCtlName.ir
       condAcc.poll(4, "cond-out")
-      Out.kr(bus = ctlSelBranch.ir, in = condAcc)
+      selBus .poll(4, "cond-out-bus")
+      Out.kr(bus = selBus, in = condAcc)
 
-      Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
+      val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
+      _links ::= linkRes
+      linkRes
     }
   }
 
