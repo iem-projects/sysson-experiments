@@ -18,7 +18,7 @@ import at.iem.sysson.experiments.If
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -142,11 +142,13 @@ object SysSonUGenGraphBuilder {
         if (selBranchId < 0) errorOutsideBranch()
         val selCtlName  = linkCtlName(selBranchId)
         val selBus      = selCtlName.ir
-        val condAcc = In.kr(selBus)
+        val condCh      = In.kr(selBus)
+//        val condAcc     = In.kr(selBus)
         // println(s"cond-in-ctl $selCtlName")
         // condAcc.poll(4, "cond-in")
         // selBus .poll(4, "cond-in-bus")
-        condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
+//        condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
+        condCh
       }
 
     def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
@@ -306,7 +308,8 @@ object SysSonUGenGraphBuilder {
       // println(s"cond-out-ctl $selCtlName")
       // condAcc.poll(4, "cond-out")
       // selBus .poll(4, "cond-out-bus")
-      Out.kr(bus = selBus, in = condAcc)
+      val condChange  = Delay1.kr(condAcc) sig_!= condAcc
+      Out.kr(bus = selBus, in = condChange)
 
       val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
       _links ::= linkRes
