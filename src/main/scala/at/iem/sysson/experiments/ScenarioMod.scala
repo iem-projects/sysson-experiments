@@ -53,15 +53,16 @@ object ScenarioMod {
 
     val sg2 = SynthGraph {
       val amp : GE = "amp" .kr(0.2)
-//      val freq: GE = "freq".kr
-//      val freq: GE = ExpRand(10, 10000) // XXX TODO --- control currently doesn't work in child branches
       val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
+        WhiteNoise.ar.poll(0, "HELLO SIN")
         SinOsc.ar(freq)
       } ElseIf (freq > 100) Then {
+        WhiteNoise.ar.poll(0, "HELLO DUST")
         Dust.ar(freq)
       } Else {
+        WhiteNoise.ar.poll(0, "HELLO NOISE")
         WhiteNoise.ar
 //        WhiteNoise.ar(Seq.fill(2)(1))
       }

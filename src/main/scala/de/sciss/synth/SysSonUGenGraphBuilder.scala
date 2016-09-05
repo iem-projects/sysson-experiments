@@ -141,7 +141,7 @@ object SysSonUGenGraphBuilder {
         if (selectedBranchId < 0) errorOutsideBranch()
         val ctlName = linkCtlName(selectedBranchId)
         val selBus  = ctlName.ir
-        In.kr(selBus) & ((1 << (branchIdx + 1)) - 1) // sig_== (1 << branchIdx)
+        In.kr(selBus) & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
       }
 
     def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
@@ -251,18 +251,26 @@ object SysSonUGenGraphBuilder {
       // not contribute to the higher channels.
       // We can add the other behaviour later.
       var numChannels = 0
-      cases.zipWithIndex.foreach { case (c, ci) =>
+      val lastBranchIdx = cases.size - 1
+      cases.zipWithIndex.foreach { case (c, branchIdx) =>
         // make sure the condition is zero or one
-        val condBin   = forceBinary(c.cond)
-        // then "bit-shift" it.
-        val condShift = if (ci == 0) condBin else condBin << ci
-        // then collect the bits in a "bit-field"
-        condAcc       = if (ci == 0) condBin else condAcc | condShift
-        // then the branch condition is met when the field equals the shifted single condition
-        val condEq    = if (ci == 0) condBin else condAcc sig_== condShift
+        val condBin = forceBinary(c.cond)
+        val condEq = if (branchIdx == 0) {
+          condAcc = condBin
+          condBin
+        } else {
+          // then "bit-shift" it.
+          val condShift = condBin << branchIdx
+          // then collect the bits in a "bit-field"
+          condAcc |= condShift
+          // then the branch condition is met when the fields masked up to here equal the shifted single condition
+          val condMask = if (branchIdx == lastBranchIdx) condAcc else condAcc & ((1 << (branchIdx + 1)) - 1)
+          condMask sig_== (1 << branchIdx)
+        }
         import ugen._
         val childId = outer.allocId()
         val nodeCtl = pauseNodeCtlName(childId)
+        // condEq.poll(4, s"gate $branchIdx")
         Pause.kr(gate = condEq, node = nodeCtl.ir)
         val resultCtl = linkCtlName(resultLinkId)
         val graphB = SynthGraph {
@@ -275,7 +283,7 @@ object SysSonUGenGraphBuilder {
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
         val child   = new InnerImpl(childId = childId, selectedBranchId = selectedBranchId,
-          branchIdx = ci, parent = builder, name = s"inner{if $resultLinkId case $ci}")
+          branchIdx = branchIdx, parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
         val childRes = child.run {
           val res         = child.buildInner(graphC)
           val sig         = c.res.expand
@@ -289,7 +297,7 @@ object SysSonUGenGraphBuilder {
       val linkSelBranch = Link(id = selectedBranchId, rate = control, numChannels = 1)
       _links ::= linkSelBranch
       val ctlSelBranch  = linkCtlName(selectedBranchId)
-      condAcc.poll(4, "cond-acc")
+      // condAcc.poll(4, "cond-acc")
       Out.kr(bus = ctlSelBranch.ir, in = condAcc)
 
       Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
