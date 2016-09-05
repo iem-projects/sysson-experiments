@@ -143,9 +143,9 @@ object SysSonUGenGraphBuilder {
         val selCtlName  = linkCtlName(selBranchId)
         val selBus      = selCtlName.ir
         val condAcc = In.kr(selBus)
-        println(s"cond-in-ctl $selCtlName")
-        condAcc.poll(4, "cond-in")
-        selBus .poll(4, "cond-in-bus")
+        // println(s"cond-in-ctl $selCtlName")
+        // condAcc.poll(4, "cond-in")
+        // selBus .poll(4, "cond-in-bus")
         condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
       }
 
@@ -303,9 +303,9 @@ object SysSonUGenGraphBuilder {
       _links ::= linkSelBranch
       val selCtlName  = linkCtlName(selBranchId)
       val selBus      = selCtlName.ir
-      println(s"cond-out-ctl $selCtlName")
-      condAcc.poll(4, "cond-out")
-      selBus .poll(4, "cond-out-bus")
+      // println(s"cond-out-ctl $selCtlName")
+      // condAcc.poll(4, "cond-out")
+      // selBus .poll(4, "cond-out-bus")
       Out.kr(bus = selBus, in = condAcc)
 
       val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?

@@ -121,7 +121,7 @@ object ScenarioMod {
       defs          ::= sd
       defSz          += 1
       val syn         = Synth(s)
-      val hasChildren = child.children.isEmpty
+      val hasChildren = child.children.nonEmpty
       val group       = if (!hasChildren) parent else {
         val g   = Group(s)
         msgs  ::= g.newMsg(parent, addAction)
