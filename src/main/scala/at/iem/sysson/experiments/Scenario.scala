@@ -14,39 +14,13 @@
 
 package at.iem.sysson.experiments
 
-import de.sciss.synth._
-import ugen._
+import at.iem.sysson.experiments.Ops._
 import de.sciss.file._
 import de.sciss.osc
-
-import scala.language.implicitConversions
+import de.sciss.synth._
+import de.sciss.synth.ugen._
 
 object Scenario {
-  implicit def stringToLazyCtlFactory(name: String): LazyControl.Factory = new LazyControl.Factory(name)
-
-  object LazyControl {
-    final class Factory(name: String) {
-      def ir                       : LazyControl = ir(0f)
-      def ir(values: ControlValues): LazyControl = LazyControl(scalar , name, values)
-      def kr                       : LazyControl = kr(0f)
-      def kr(values: ControlValues): LazyControl = LazyControl(control, name, values)
-      def ar                       : LazyControl = ar(0f)
-      def ar(values: ControlValues): LazyControl = LazyControl(audio  , name, values)
-    }
-  }
-  final case class LazyControl(rate: Rate, name: String, values: ControlValues) extends GE with Lazy {
-    def expand: UGenInLike = UGenGraph.builder.visit(this, init)
-
-    private def init: UGenInLike = rate match {
-      case `scalar`   => ControlProxy     (scalar , values.seq, Some(name))
-      case `control`  => ControlProxy     (control, values.seq, Some(name))
-      case `audio`    => AudioControlProxy(         values.seq, Some(name))
-      case _          => sys.error(s"Unsupported LazyControl rate $rate")
-    }
-
-    def force(b: UGenGraph.Builder): Unit = ()
-  }
-
   def main(args: Array[String]): Unit = {
     lazy val _ = SynthGraph {
       val amp : GE = "amp".kr
@@ -102,6 +76,7 @@ object Scenario {
       val dotC        = ScalaColliderDOT.Config()
       dotC.input      = res /* sd */.graph
       dotC.graphName  = /* sd. */ name
+      dotC.rateColors = true
 //      val dot         = ScalaColliderDOT(dotC)
 //      println(dot)
       ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
@@ -172,9 +147,9 @@ object Scenario {
       s.dumpOSC()
       println("Should hear WhiteNoise.")
       val syn = play(ug, args = List("freq" -> 0))
-      import Ops._
       Thread.sleep(2000)
       println("Should hear Dust.")
+      import de.sciss.synth.Ops._
       syn.set("freq" -> 101)
       Thread.sleep(2000)
       println("Should hear SinOsc.")
