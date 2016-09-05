@@ -16,7 +16,7 @@ package de.sciss.synth.ugen.impl.monolithic
 
 import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, If, IfBuilder}
 import de.sciss.synth.ugen.{Constant, UnaryOpUGen}
-import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, UGenGraph, UGenInLike, UndefinedRate}
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 
@@ -86,10 +86,6 @@ final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
 
   protected def makeUGens: UGenInLike = {
     val (_, res) = ((0: GE, 0: GE) /: cases) { case ((condAcc, resAcc), c) =>
-      val bg = c.branch
-      bg.sources.foreach { lz =>
-        lz.force(UGenGraph.builder)
-      }
       val condNow: GE = condAcc match {
         case Constant(0)  => c.cond
         case cPrev        => UnaryOpUGen.Not.make(cPrev) & c.cond
@@ -98,6 +94,13 @@ final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
         case Constant(0)  => c.cond
         case cPrev        => cPrev | c.cond
       }
+      SysSonUGenGraphBuilder.enterIfCase(condNow)
+
+      val bg = c.branch
+      bg.sources.foreach { lz =>
+        lz.force(UGenGraph.builder)
+      }
+
       val resNow = c.res * condNow
       val resNext: GE = resAcc match {
         case Constant(0)  => resNow

@@ -1,9 +1,9 @@
 package at.iem.sysson.experiments
 
 import de.sciss.synth
-import de.sciss.synth.GE
+import de.sciss.synth.ugen.impl.modular.{IfBuilderImpl => IfMod}
 import de.sciss.synth.ugen.impl.monolithic.{IfBuilderImpl => IfMono}
-import de.sciss.synth.ugen.impl.modular   .{IfBuilderImpl => IfMod}
+import de.sciss.synth.{ControlRated, GE, SysSonUGenGraphBuilder, UGenGraph, UGenInLike}
 
 import scala.language.implicitConversions
 
@@ -63,25 +63,19 @@ import scala.language.implicitConversions
  */
 
 object If {
-  var monolithic: Boolean = false // true
+  var monolithic: Boolean = true
 
-  def apply(cond: /* => */ GE): IfBuilder = if (monolithic) IfMono(cond) else IfMod(cond)
-
-//  implicit def result[A](x: If[A]): A = ...
+  def apply(cond: GE): IfBuilder = if (monolithic) IfMono(cond) else IfMod(cond)
 }
 
 trait IfBuilder {
   def Then [A](branch: => A): If[A]
-
-  // def apply[A](branch: => A): If[A] = Then(branch)
 }
 
 trait If[A] {
   def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
-  def ElseIf (cond: /* => */ GE): ElseIfBuilder[A]
+  def ElseIf (cond: GE): ElseIfBuilder[A]
 }
-
-//trait IfGE extends If[GE] with GE
 
 object ElseBuilder {
   object Result extends LowPri {
@@ -89,17 +83,23 @@ object ElseBuilder {
   }
   sealed trait Result[-A, Out]
 
-  object GE           extends Result[synth.GE, synth.GE /* IfGE */]
-  final class Unit[A] extends Result[A       , scala.Unit /* If[A] */]
+  object GE           extends Result[synth.GE, synth.GE  ]
+  final class Unit[A] extends Result[A       , scala.Unit]
 
   trait LowPri {
-    implicit def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]
+    implicit final def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]
     private final val instance = new Unit[Any]
   }
 }
 
 trait ElseIfBuilder[A] {
   def Then [B >: A](branch: => B): If[B]
+}
 
-  // def apply[B >: A](branch: => B): If[B] = Then(branch)
+final case class ThisBranch() extends GE.Lazy with ControlRated {
+  protected def makeUGens: UGenInLike =
+    UGenGraph.builder match {
+      case sysson: SysSonUGenGraphBuilder => sysson.thisBranch
+      case _ => sys.error(s"Cannot expand ThisBranch outside of SysSon UGen graph builder")
+    }
 }

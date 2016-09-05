@@ -1,5 +1,5 @@
 /*
- *  Scenario.scala
+ *  ScenarioMod
  *  (SysSon-Experiments)
  *
  *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
@@ -20,8 +20,10 @@ import de.sciss.osc
 import de.sciss.synth._
 import de.sciss.synth.ugen._
 
-object Scenario {
+object ScenarioMod {
   def main(args: Array[String]): Unit = {
+    If.monolithic = false
+
     lazy val _ = SynthGraph {
       val amp : GE = "amp".kr
       val freq: GE = "freq".kr
@@ -87,62 +89,6 @@ object Scenario {
 
     print("top", 0, ug)
 
-    def play(res0: SysSonUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
-      val s     = Server.default
-      var defs  = List.empty[SynthDef]
-      var defSz = 0   // used to create unique def names
-      var msgs  = List.empty[osc.Message]
-      var ctl   = args.reverse  // init
-      var buses = List.empty[Bus]
-
-      def loop(child: SysSonUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
-        val name        = s"test-$defSz"
-        val sd          = SynthDef(name, child.graph)
-        defs          ::= sd
-        defSz          += 1
-        val syn         = Synth(s)
-        val hasChildren = child.children.isEmpty
-        val group       = if (!hasChildren) parent else {
-          val g   = Group(s)
-          msgs  ::= g.newMsg(parent, addAction)
-          g
-        }
-        val node  = if (hasChildren) group else syn
-        msgs ::= syn.newMsg(name, target = group, addAction = if (hasChildren) addToHead else addAction)
-
-        child.children.foreach { cc =>
-          val ccn = loop(cc, group, addToTail)
-          ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
-        }
-
-        child.links.foreach { link =>
-          val bus = link.rate match {
-            case `audio`    => Bus.audio  (s, numChannels = link.numChannels)
-            case `control`  => Bus.control(s, numChannels = link.numChannels)
-            case other      => throw new IllegalArgumentException(s"Unsupported link rate $other")
-          }
-          buses ::= bus
-          ctl   ::= SysSonUGenGraphBuilder.linkCtlName(link.id) -> bus.index
-        }
-
-        node
-      }
-
-      val mainNode = loop(res0, parent = s.defaultGroup, addAction = addToHead)
-      mainNode.onEnd {
-        buses.foreach(_.free())
-      }
-
-      msgs ::= mainNode.setMsg(ctl.reverse: _*)
-      val b1 = osc.Bundle.now(msgs.reverse: _*)
-      val defL :: defI = defs
-      val async = defL.recvMsg(b1) :: defI.map(_.recvMsg)
-      val b2 = osc.Bundle.now(async.reverse: _*)
-
-      s ! b2
-      mainNode
-    }
-
     Server.run { s =>
       s.dumpOSC()
       println("Should hear WhiteNoise.")
@@ -158,5 +104,61 @@ object Scenario {
       s.quit()
       sys.exit()
     }
+  }
+
+  def play(res0: SysSonUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
+    val s     = Server.default
+    var defs  = List.empty[SynthDef]
+    var defSz = 0   // used to create unique def names
+    var msgs  = List.empty[osc.Message]
+    var ctl   = args.reverse  // init
+    var buses = List.empty[Bus]
+
+    def loop(child: SysSonUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
+      val name        = s"test-$defSz"
+      val sd          = SynthDef(name, child.graph)
+      defs          ::= sd
+      defSz          += 1
+      val syn         = Synth(s)
+      val hasChildren = child.children.isEmpty
+      val group       = if (!hasChildren) parent else {
+        val g   = Group(s)
+        msgs  ::= g.newMsg(parent, addAction)
+        g
+      }
+      val node  = if (hasChildren) group else syn
+      msgs ::= syn.newMsg(name, target = group, addAction = if (hasChildren) addToHead else addAction)
+
+      child.children.foreach { cc =>
+        val ccn = loop(cc, group, addToTail)
+        ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
+      }
+
+      child.links.foreach { link =>
+        val bus = link.rate match {
+          case `audio`    => Bus.audio  (s, numChannels = link.numChannels)
+          case `control`  => Bus.control(s, numChannels = link.numChannels)
+          case other      => throw new IllegalArgumentException(s"Unsupported link rate $other")
+        }
+        buses ::= bus
+        ctl   ::= SysSonUGenGraphBuilder.linkCtlName(link.id) -> bus.index
+      }
+
+      node
+    }
+
+    val mainNode = loop(res0, parent = s.defaultGroup, addAction = addToHead)
+    mainNode.onEnd {
+      buses.foreach(_.free())
+    }
+
+    msgs ::= mainNode.setMsg(ctl.reverse: _*)
+    val b1 = osc.Bundle.now(msgs.reverse: _*)
+    val defL :: defI = defs
+    val async = defL.recvMsg(b1) :: defI.map(_.recvMsg)
+    val b2 = osc.Bundle.now(async.reverse: _*)
+
+    s ! b2
+    mainNode
   }
 }

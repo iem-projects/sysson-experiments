@@ -14,6 +14,7 @@
 
 package de.sciss.synth
 
+import at.iem.sysson.experiments.If
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
@@ -107,6 +108,14 @@ object SysSonUGenGraphBuilder {
     def outer: OuterImpl
     def childId: Int
 
+    /** The link identifier for the control-rate bus
+      * that carries the selected-branch-signal.
+      */
+    def selectedBranchId: Int
+
+    /** Index of current branch or if-case in the current if-block. */
+    def branchIdx: Int
+
     // ---- impl ----
 
     protected final var _children = List.empty[Result]
@@ -116,6 +125,26 @@ object SysSonUGenGraphBuilder {
     private[this] var controlProxies  = ISet.empty[ControlProxyLike]  // g0.controlProxies
 
     override def toString = s"SynthGraph.Builder@${hashCode.toHexString}"
+
+    private[this] var enteredIfCase = Option.empty[GE]
+
+    private def errorOutsideBranch(): Nothing =
+      throw new UnsupportedOperationException("ThisBranch used outside of if-branch")
+
+    def thisBranch: GE =
+      if (If.monolithic) enteredIfCase.getOrElse(errorOutsideBranch())
+      else {
+        // the branch is selected if the "bit" for this
+        // branch is set, and the bits for all lower branches
+        // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
+        // I.e. x & 7 == 4
+        if (selectedBranchId < 0) errorOutsideBranch()
+        val ctlName = linkCtlName(selectedBranchId)
+        val selBus  = ctlName.ir
+        In.kr(selBus) & ((1 << (branchIdx + 1)) - 1) // sig_== (1 << branchIdx)
+      }
+
+    def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
 
     final def buildInner(g0: SynthGraph): Result = {
       var _sources: Vec[Lazy] = g0.sources
@@ -132,7 +161,8 @@ object SysSonUGenGraphBuilder {
             case _: IfGEImpl =>
               // XXX TODO --- what to do with the damn control proxies?
               val graphC  = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
-              val child   = new InnerImpl(childId = -1, parent = builder, name = "continue")
+              val child   = new InnerImpl(childId = -1, selectedBranchId = -1, branchIdx = -1,
+                parent = builder, name = "continue")
               _children ::= child.build(graphC)
               i = sz    // "skip rest"
             case _ =>
@@ -210,7 +240,8 @@ object SysSonUGenGraphBuilder {
     // ---- UGenGraph.Builder ----
 
     final def expandIfCases(cases: List[IfCase[GE]]): Link = {
-      val resultLinkId = outer.allocId()
+      val resultLinkId      = outer.allocId()
+      val selectedBranchId  = outer.allocId()
       var condAcc: GE = 0
       // Will be maximum across all branches.
       // Note that branches with a smaller number
@@ -223,9 +254,8 @@ object SysSonUGenGraphBuilder {
       cases.zipWithIndex.foreach { case (c, ci) =>
         // make sure the condition is zero or one
         val condBin   = forceBinary(c.cond)
-        // then "bit-shift" it. XXX TODO --- does BinaryOpUGen needs to implement bit-shift
-        // https://github.com/Sciss/ScalaColliderUGens/issues/23
-        val condShift = if (ci == 0) condBin else condBin * (1 << ci)
+        // then "bit-shift" it.
+        val condShift = if (ci == 0) condBin else condBin << ci
         // then collect the bits in a "bit-field"
         condAcc       = if (ci == 0) condBin else condAcc | condShift
         // then the branch condition is met when the field equals the shifted single condition
@@ -233,9 +263,7 @@ object SysSonUGenGraphBuilder {
         import ugen._
         val childId = outer.allocId()
         val nodeCtl = pauseNodeCtlName(childId)
-//        val busCtl  = pauseBusCtlName (resultLinkId, ci)
         Pause.kr(gate = condEq, node = nodeCtl.ir)
-//        Out.kr(bus = busCtl.ir, in = condEq)    // child can monitor its own pause state that way
         val resultCtl = linkCtlName(resultLinkId)
         val graphB = SynthGraph {
           val resultBus   = resultCtl.ir
@@ -246,7 +274,8 @@ object SysSonUGenGraphBuilder {
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child   = new InnerImpl(childId = childId, parent = builder, name = s"inner{if $resultLinkId case $ci}")
+        val child   = new InnerImpl(childId = childId, selectedBranchId = selectedBranchId,
+          branchIdx = ci, parent = builder, name = s"inner{if $resultLinkId case $ci}")
         val childRes = child.run {
           val res         = child.buildInner(graphC)
           val sig         = c.res.expand
@@ -257,13 +286,12 @@ object SysSonUGenGraphBuilder {
         _children ::= childRes
       }
 
-      if (numChannels > 0) {
-        val idSelBranch   = outer.allocId()
-        val linkSelBranch = Link(id = idSelBranch, rate = control, numChannels = 1)
-        val ctlSelBranch  = linkCtlName(idSelBranch)
-        _links           ::= linkSelBranch
-        Out.kr(bus = ctlSelBranch.ir, in = condAcc)
-      }
+      val linkSelBranch = Link(id = selectedBranchId, rate = control, numChannels = 1)
+      _links ::= linkSelBranch
+      val ctlSelBranch  = linkCtlName(selectedBranchId)
+      condAcc.poll(4, "cond-acc")
+      Out.kr(bus = ctlSelBranch.ir, in = condAcc)
+
       Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
     }
   }
@@ -283,7 +311,8 @@ object SysSonUGenGraphBuilder {
     opt.getOrElse(ref.hashCode.toHexString)
   }
 
-  private final class InnerImpl(val childId: Int, parent: Impl, name: String)
+  private final class InnerImpl(val childId: Int, val selectedBranchId: Int, val branchIdx: Int,
+                                parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -314,8 +343,10 @@ object SysSonUGenGraphBuilder {
   private final class OuterImpl extends Impl {
     builder =>
 
-    def outer: OuterImpl = this
-    def childId = -1
+    def outer: OuterImpl  = this
+    def childId           = -1
+    def selectedBranchId  = -1
+    def branchIdx         = -1
 
     //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
@@ -350,6 +381,11 @@ object SysSonUGenGraphBuilder {
 
   @elidable(elidable.CONFIG) private def log(builder: Impl, what: => String): Unit =
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
+
+  def enterIfCase(cond: GE): Unit = UGenGraph.builder match {
+    case sysson: SysSonUGenGraphBuilder => sysson.enterIfCase(cond)
+    case _ => // ignore
+  }
 }
 trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
   import SysSonUGenGraphBuilder.Link
@@ -357,4 +393,10 @@ trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
   def expandIfCases(cases: List[IfCase[GE]]): Link
+
+  /** Returns gate that is open when this if branch is selected. */
+  def thisBranch: GE
+
+  /** Used by monolithic if-block. */
+  def enterIfCase(cond: GE): Unit
 }
