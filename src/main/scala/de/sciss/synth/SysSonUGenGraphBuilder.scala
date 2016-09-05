@@ -58,7 +58,7 @@ object SysSonUGenGraphBuilder {
   }
 
   def pauseNodeCtlName(id: Int): String =
-    s"$$if$id"    // e.g. first if block third branch is `$if0_2n`
+    s"$$if$id" // e.g. first if block third branch is `$if0_2n`
 
 //  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
 //    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
@@ -141,7 +141,9 @@ object SysSonUGenGraphBuilder {
         if (selectedBranchId < 0) errorOutsideBranch()
         val ctlName = linkCtlName(selectedBranchId)
         val selBus  = ctlName.ir
-        In.kr(selBus) & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
+        val condAcc = In.kr(selBus)
+        condAcc.poll(4, "cond-in")
+        condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
       }
 
     def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
@@ -240,8 +242,8 @@ object SysSonUGenGraphBuilder {
     // ---- UGenGraph.Builder ----
 
     final def expandIfCases(cases: List[IfCase[GE]]): Link = {
-      val resultLinkId      = outer.allocId()
-      val selectedBranchId  = outer.allocId()
+      val resultLinkId = outer.allocId()
+      val selBranchId  = outer.allocId()
       var condAcc: GE = 0
       // Will be maximum across all branches.
       // Note that branches with a smaller number
@@ -282,7 +284,7 @@ object SysSonUGenGraphBuilder {
         // both `c.branch` and `graphB`.
         val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
           controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child   = new InnerImpl(childId = childId, selectedBranchId = selectedBranchId,
+        val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
           branchIdx = branchIdx, parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
         val childRes = child.run {
           val res         = child.buildInner(graphC)
@@ -294,10 +296,10 @@ object SysSonUGenGraphBuilder {
         _children ::= childRes
       }
 
-      val linkSelBranch = Link(id = selectedBranchId, rate = control, numChannels = 1)
+      val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
       _links ::= linkSelBranch
-      val ctlSelBranch  = linkCtlName(selectedBranchId)
-      // condAcc.poll(4, "cond-acc")
+      val ctlSelBranch  = linkCtlName(selBranchId)
+      condAcc.poll(4, "cond-out")
       Out.kr(bus = ctlSelBranch.ir, in = condAcc)
 
       Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?

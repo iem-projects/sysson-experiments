@@ -27,15 +27,15 @@ object ScenarioThisBranch extends App {
 
     val res0: GE = If (freq > 1000) Then {
       ThisBranch().poll(4, "sin-branch")
-      freq.poll(ThisBranch(), "branch 1")
+//      freq.poll(ThisBranch(), "branch 1")
       SinOsc.ar(freq) * 0.2
     } ElseIf (freq > 100) Then {
-      ThisBranch().poll(4, "dust-branch")
-      freq.poll(ThisBranch(), "branch 2")
+//      ThisBranch().poll(4, "dust-branch")
+//      freq.poll(ThisBranch(), "branch 2")
       Dust.ar(freq)
     } Else {
-      ThisBranch().poll(4, "noise-branch")
-      DC.kr(0).poll(ThisBranch(), "branch 3")
+//      ThisBranch().poll(4, "noise-branch")
+//      DC.kr(0).poll(ThisBranch(), "branch 3")
       WhiteNoise.ar * 0.1
     }
 
@@ -44,17 +44,19 @@ object ScenarioThisBranch extends App {
 
   val ug = SysSonUGenGraphBuilder.build(sg)
 
+  ScenarioMod.print("top", 0, ug)
+
   Server.run { s =>
-//    s.dumpOSC()
+    s.dumpOSC()
     println("Should hear WhiteNoise.")
     val syn = ScenarioMod.play(ug, args = List("freq" -> 0))
     Thread.sleep(2000)
     println("Should hear Dust.")
     import de.sciss.synth.Ops._
-    syn.set("freq" -> 101)
+    syn.set("freq" -> 123)
     Thread.sleep(2000)
     println("Should hear SinOsc.")
-    syn.set("freq" -> 1001)
+    syn.set("freq" -> 1234)
     Thread.sleep(2000)
     s.quit()
     sys.exit()

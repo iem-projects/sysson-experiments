@@ -74,20 +74,6 @@ object ScenarioMod {
 
 //    val sd = SynthDef("test", ug)
 
-    def print(name: String, level: Int, res: SysSonUGenGraphBuilder.Result): Unit = {
-      import at.iem.scalacollider.ScalaColliderDOT
-      val dotC        = ScalaColliderDOT.Config()
-      dotC.input      = res /* sd */.graph
-      dotC.graphName  = /* sd. */ name
-      dotC.rateColors = true
-//      val dot         = ScalaColliderDOT(dotC)
-//      println(dot)
-      ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
-      res.children.zipWithIndex.foreach { case (child, ci) =>
-        print(s"child ${ci + 1}", level + 1, child)
-      }
-    }
-
     print("top", 0, ug)
 
     Server.run { s =>
@@ -104,6 +90,20 @@ object ScenarioMod {
       Thread.sleep(2000)
       s.quit()
       sys.exit()
+    }
+  }
+
+  def print(name: String, level: Int, res: SysSonUGenGraphBuilder.Result): Unit = {
+    import at.iem.scalacollider.ScalaColliderDOT
+    val dotC        = ScalaColliderDOT.Config()
+    dotC.input      = res /* sd */.graph
+    dotC.graphName  = /* sd. */ name
+    dotC.rateColors = true
+    //      val dot         = ScalaColliderDOT(dotC)
+    //      println(dot)
+    ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
+    res.children.zipWithIndex.foreach { case (child, ci) =>
+      print(s"child ${ci + 1}", level + 1, child)
     }
   }
 
@@ -132,7 +132,7 @@ object ScenarioMod {
 
       child.children.foreach { cc =>
         val ccn = loop(cc, group, addToTail)
-        ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
+        if (cc.id >= 0) ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
       }
 
       child.links.foreach { link =>
