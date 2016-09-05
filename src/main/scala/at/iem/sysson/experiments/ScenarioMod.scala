@@ -56,13 +56,13 @@ object ScenarioMod {
       val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
-        WhiteNoise.ar.poll(0, "HELLO SIN")
+        // WhiteNoise.ar.poll(0, "HELLO SIN")
         SinOsc.ar(freq)
       } ElseIf (freq > 100) Then {
-        WhiteNoise.ar.poll(0, "HELLO DUST")
+        // WhiteNoise.ar.poll(0, "HELLO DUST")
         Dust.ar(freq)
       } Else {
-        WhiteNoise.ar.poll(0, "HELLO NOISE")
+        // WhiteNoise.ar.poll(0, "HELLO NOISE")
         WhiteNoise.ar
 //        WhiteNoise.ar(Seq.fill(2)(1))
       }

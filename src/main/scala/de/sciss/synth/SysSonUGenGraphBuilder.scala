@@ -106,6 +106,7 @@ object SysSonUGenGraphBuilder {
     // ---- abstract ----
 
     def outer: OuterImpl
+    def parent: Impl
     def childId: Int
 
     /** The link identifier for the control-rate bus
@@ -134,21 +135,18 @@ object SysSonUGenGraphBuilder {
     def thisBranch: GE =
       if (If.monolithic) enteredIfCase.getOrElse(errorOutsideBranch())
       else {
-        // the branch is selected if the "bit" for this
-        // branch is set, and the bits for all lower branches
-        // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
-        // I.e. x & 7 == 4
-        val selBranchId = selectedBranchId
-        if (selBranchId < 0) errorOutsideBranch()
-        val selCtlName  = linkCtlName(selBranchId)
-        val selBus      = selCtlName.ir
-        val condCh      = In.kr(selBus)
-//        val condAcc     = In.kr(selBus)
-        // println(s"cond-in-ctl $selCtlName")
-        // condAcc.poll(4, "cond-in")
-        // selBus .poll(4, "cond-in-bus")
-//        condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
-        condCh
+//        // the branch is selected if the "bit" for this
+//        // branch is set, and the bits for all lower branches
+//        // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
+//        // I.e. x & 7 == 4
+//        val selBranchId = selectedBranchId
+//        if (selBranchId < 0) errorOutsideBranch()
+//        val selCtlName  = linkCtlName(selBranchId)
+//        val selBus      = selCtlName.ir
+//        val condCh      = In.kr(selBus)
+//        condCh
+        val in = parent.tryRefer("cond-change").getOrElse(errorOutsideBranch())
+        in
       }
 
     def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
@@ -201,15 +199,16 @@ object SysSonUGenGraphBuilder {
 
     private[this] var linkMap = Map.empty[AnyRef, Link]
 
-    private def expandLinkSink(link: Link): (Link, UGenInLike) = {
+    private def expandLinkSink(link: Link): UGenInLike = {
       val ctlName   = linkCtlName(link.id)
       val ctl       = ctlName.ir    // link-bus
       val in        = In(link.rate, bus = ctl, numChannels = link.numChannels)
       val inExp = in.expand
-      (link, inExp)
+      // (link, inExp)
+      inExp
     }
 
-    final def tryRefer(ref: AnyRef): Option[(Link, UGenInLike)] =
+    final def tryRefer(ref: AnyRef): Option[UGenInLike] =
       sourceMap.get(ref).collect {
         case sig: UGenInLike =>
           val link        = linkMap.getOrElse(ref, {
@@ -247,72 +246,88 @@ object SysSonUGenGraphBuilder {
     // ---- UGenGraph.Builder ----
 
     final def expandIfCases(cases: List[IfCase[GE]]): Link = {
-      val resultLinkId = outer.allocId()
-      val selBranchId  = outer.allocId()
-      var condAcc: GE = 0
-      // Will be maximum across all branches.
+      val resultLinkId  = outer.allocId()
+      val selBranchId   = outer.allocId()
+      val lastBranchIdx = cases.size - 1
+
+      // calculate the accumulated conditions signal,
+      // and pair the if-cases with their condition-GE
+      val (condAcc, condEqs) = ((0: GE, List.empty[(IfCase[GE], GE)]) /: cases.zipWithIndex) {
+        case ((condAcc0, condEqs0), (c, branchIdx)) =>
+          // make sure the condition is zero or one
+          val condBin = forceBinary(c.cond)
+          val (condAcc1, condEq1) = if (branchIdx == 0) {
+            (condBin, condBin)
+          } else {
+            // then "bit-shift" it.
+            val condShift = condBin << branchIdx
+            // then collect the bits in a "bit-field"
+            val _condAcc1 = condAcc0 | condShift
+            // then the branch condition is met when the fields masked up to here equal the shifted single condition
+            val condMask = if (branchIdx == lastBranchIdx) _condAcc1 else _condAcc1 & ((1 << (branchIdx + 1)) - 1)
+            val condEq = condMask sig_== (1 << branchIdx)
+            (_condAcc1, condEq)
+          }
+          (condAcc1, (c, condEq1) :: condEqs0)
+      }
+
+      //      val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
+      //      _links ::= linkSelBranch
+      //      val selCtlName  = linkCtlName(selBranchId)
+      //      val selBus      = selCtlName.ir
+      // println(s"cond-out-ctl $selCtlName")
+      // condAcc.poll(4, "cond-out")
+      // selBus .poll(4, "cond-out-bus")
+
+      // This is very elegant: The following elements
+      // are side-effect free and will thus be removed
+      // from the UGen graph, _unless_ a child is asking
+      // for this through `tryRefer`, creating the
+      // link on demand. We must store in the source-map
+      // _before_ we create the children.
+      val condChange = Delay1.kr(condAcc) sig_!= condAcc
+      sourceMap += "cond-change" -> condChange.expand
+      // Out.kr(bus = selBus, in = condChange)
+
+      // numChannels: Will be maximum across all branches.
       // Note that branches with a smaller number
       // of channels do not "wrap-extend" their
       // signal as would be the case normally in
       // ScalaCollider. Instead, they simply do
       // not contribute to the higher channels.
       // We can add the other behaviour later.
-      var numChannels = 0
-      val lastBranchIdx = cases.size - 1
-      cases.zipWithIndex.foreach { case (c, branchIdx) =>
-        // make sure the condition is zero or one
-        val condBin = forceBinary(c.cond)
-        val condEq = if (branchIdx == 0) {
-          condAcc = condBin
-          condBin
-        } else {
-          // then "bit-shift" it.
-          val condShift = condBin << branchIdx
-          // then collect the bits in a "bit-field"
-          condAcc |= condShift
-          // then the branch condition is met when the fields masked up to here equal the shifted single condition
-          val condMask = if (branchIdx == lastBranchIdx) condAcc else condAcc & ((1 << (branchIdx + 1)) - 1)
-          condMask sig_== (1 << branchIdx)
-        }
-        import ugen._
-        val childId = outer.allocId()
-        val nodeCtl = pauseNodeCtlName(childId)
-        // condEq.poll(4, s"gate $branchIdx")
-        Pause.kr(gate = condEq, node = nodeCtl.ir)
-        val resultCtl = linkCtlName(resultLinkId)
-        val graphB = SynthGraph {
-          val resultBus   = resultCtl.ir
-          val resultRate  = audio // XXX TODO --- how to get rate?
-          Out(resultRate, resultBus, c.res)
-        }
-        // now call `UGenGraph.use()` with a child builder, and expand
-        // both `c.branch` and `graphB`.
-        val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
-          controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-        val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
-          branchIdx = branchIdx, parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
-        val childRes = child.run {
-          val res         = child.buildInner(graphC)
-          val sig         = c.res.expand
-          val childChans  = sig.outputs.size
-          numChannels     = math.max(numChannels, childChans)
-          res
-        }
-        _children ::= childRes
+
+      val (numChannels, children1) = ((0, _children) /: condEqs.reverse.zipWithIndex) {
+        case ((numCh0, children0), ((c, condEq), branchIdx)) =>
+          import ugen._
+          val childId = outer.allocId()
+          val nodeCtl = pauseNodeCtlName(childId)
+          // condEq.poll(4, s"gate $branchIdx")
+          Pause.kr(gate = condEq, node = nodeCtl.ir)
+          val resultCtl = linkCtlName(resultLinkId)
+          val graphB = SynthGraph {
+            val resultBus   = resultCtl.ir
+            val resultRate  = audio // XXX TODO --- how to get rate?
+            Out(resultRate, resultBus, c.res)
+          }
+          // now call `UGenGraph.use()` with a child builder, and expand
+          // both `c.branch` and `graphB`.
+          val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
+            controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
+          val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
+            branchIdx = branchIdx, parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
+          val (childChans, childRes) = child.run {
+            val res     = child.buildInner(graphC)
+            val sig     = c.res.expand
+            val chans   = sig.outputs.size
+            (chans, res)
+          }
+          (math.max(numCh0, childChans), childRes :: children0)
       }
 
-      val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
-      _links ::= linkSelBranch
-      val selCtlName  = linkCtlName(selBranchId)
-      val selBus      = selCtlName.ir
-      // println(s"cond-out-ctl $selCtlName")
-      // condAcc.poll(4, "cond-out")
-      // selBus .poll(4, "cond-out-bus")
-      val condChange  = Delay1.kr(condAcc) sig_!= condAcc
-      Out.kr(bus = selBus, in = condChange)
-
       val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
-      _links ::= linkRes
+      _children   = children1
+      _links    ::= linkRes
       linkRes
     }
   }
@@ -333,7 +348,7 @@ object SysSonUGenGraphBuilder {
   }
 
   private final class InnerImpl(val childId: Int, val selectedBranchId: Int, val branchIdx: Int,
-                                parent: Impl, name: String)
+                                val parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -349,8 +364,9 @@ object SysSonUGenGraphBuilder {
         val exp = parent.tryRefer(ref).fold[Any] {
           log(this, s"...${smartRef(ref)} -> not yet found")
           init()
-        } { case (link, in) =>
-          log(this, s"...${smartRef(ref)} -> found in parent: $link")
+        } { in => // case (link, in) =>
+          // log(this, s"...${smartRef(ref)} -> found in parent: $link")
+          log(this, s"...${smartRef(ref)} -> found in parent")
 //          _linkIn ::= link
           in
         }
@@ -365,6 +381,8 @@ object SysSonUGenGraphBuilder {
     builder =>
 
     def outer: OuterImpl  = this
+    def parent: Impl      = this
+
     def childId           = -1
     def selectedBranchId  = -1
     def branchIdx         = -1
