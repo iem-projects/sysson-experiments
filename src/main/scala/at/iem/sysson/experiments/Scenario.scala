@@ -19,7 +19,34 @@ import ugen._
 import de.sciss.file._
 import de.sciss.osc
 
+import scala.language.implicitConversions
+
 object Scenario {
+  implicit def stringToLazyCtlFactory(name: String): LazyControl.Factory = new LazyControl.Factory(name)
+
+  object LazyControl {
+    final class Factory(name: String) {
+      def ir                       : LazyControl = ir(0f)
+      def ir(values: ControlValues): LazyControl = LazyControl(scalar , name, values)
+      def kr                       : LazyControl = kr(0f)
+      def kr(values: ControlValues): LazyControl = LazyControl(control, name, values)
+      def ar                       : LazyControl = ar(0f)
+      def ar(values: ControlValues): LazyControl = LazyControl(audio  , name, values)
+    }
+  }
+  final case class LazyControl(rate: Rate, name: String, values: ControlValues) extends GE with Lazy {
+    def expand: UGenInLike = UGenGraph.builder.visit(this, init)
+
+    private def init: UGenInLike = rate match {
+      case `scalar`   => ControlProxy     (scalar , values.seq, Some(name))
+      case `control`  => ControlProxy     (control, values.seq, Some(name))
+      case `audio`    => AudioControlProxy(         values.seq, Some(name))
+      case _          => sys.error(s"Unsupported LazyControl rate $rate")
+    }
+
+    def force(b: UGenGraph.Builder): Unit = ()
+  }
+
   def main(args: Array[String]): Unit = {
     lazy val _ = SynthGraph {
       val amp : GE = "amp".kr
@@ -48,24 +75,11 @@ object Scenario {
       Out.ar(0, res0 * amp)
     }
 
-    case class LazyControl(rate: Rate, name: String, default: Double = 0.0) extends GE with Lazy {
-      def expand: UGenInLike = UGenGraph.builder.visit(this, init)
-
-      private def init: UGenInLike = rate match {
-        case `scalar`   => name.ir(default)
-        case `control`  => name.kr(default)
-        case `audio`    => name.ar(default)
-        case _          => sys.error(s"Unsupported LazyControl rate $rate")
-      }
-
-      def force(b: UGenGraph.Builder): Unit = ()
-    }
-
     val sg2 = SynthGraph {
       val amp : GE = "amp" .kr(0.2)
 //      val freq: GE = "freq".kr
 //      val freq: GE = ExpRand(10, 10000) // XXX TODO --- control currently doesn't work in child branches
-      val freq: GE = LazyControl(control, "freq")
+      val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
         SinOsc.ar(freq)

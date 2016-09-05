@@ -14,6 +14,7 @@
 
 package de.sciss.synth
 
+import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, In, Out, UnaryOpUGen}
