@@ -138,10 +138,12 @@ object SysSonUGenGraphBuilder {
         // branch is set, and the bits for all lower branches
         // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
         // I.e. x & 7 == 4
-        if (selectedBranchId < 0) errorOutsideBranch()
-        val selCtlName  = linkCtlName(selectedBranchId)
+        val selBranchId = selectedBranchId
+        if (selBranchId < 0) errorOutsideBranch()
+        val selCtlName  = linkCtlName(selBranchId)
         val selBus      = selCtlName.ir
         val condAcc = In.kr(selBus)
+        println(s"cond-in-ctl $selCtlName")
         condAcc.poll(4, "cond-in")
         selBus .poll(4, "cond-in-bus")
         condAcc & ((1 << (branchIdx + 1)) - 1) sig_== (1 << branchIdx)
@@ -301,6 +303,7 @@ object SysSonUGenGraphBuilder {
       _links ::= linkSelBranch
       val selCtlName  = linkCtlName(selBranchId)
       val selBus      = selCtlName.ir
+      println(s"cond-out-ctl $selCtlName")
       condAcc.poll(4, "cond-out")
       selBus .poll(4, "cond-out-bus")
       Out.kr(bus = selBus, in = condAcc)
