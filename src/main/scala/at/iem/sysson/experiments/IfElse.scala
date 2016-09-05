@@ -65,7 +65,11 @@ import scala.language.implicitConversions
 object If {
   var monolithic: Boolean = true
 
-  def apply(cond: GE): IfBuilder = if (monolithic) IfMono(cond) else IfMod(cond)
+  def apply(cond: GE): IfBuilder = if (If.monolithic) IfMono(cond) else IfMod(cond)
+}
+
+object IfLag {
+  def apply(cond: GE, dur: GE): IfBuilder = ??? // if (If.monolithic) IfMono(cond) else IfMod(cond)
 }
 
 trait IfBuilder {

@@ -19,6 +19,8 @@ import de.sciss.synth._
 import de.sciss.synth.ugen._
 
 object ScenarioThisBranch extends App {
+  val CREATE_PDF = false
+
   If.monolithic = false
 
   val sg = SynthGraph {
@@ -42,7 +44,7 @@ object ScenarioThisBranch extends App {
 
   val ug = SysSonUGenGraphBuilder.build(sg)
 
-  ScenarioMod.print("top", 0, ug)
+  if (CREATE_PDF) ScenarioMod.print("top", 0, ug)
 
   Server.run { s =>
     s.dumpOSC()

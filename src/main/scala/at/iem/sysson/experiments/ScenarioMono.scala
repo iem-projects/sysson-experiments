@@ -7,6 +7,8 @@ import de.sciss.synth.ugen.{Dust, Out, Pan2, SinOsc, WhiteNoise}
 import de.sciss.synth.{GE, SynthDef}
 
 object ScenarioMono extends App {
+  val CREATE_PDF = false
+
   If.monolithic = true
 
   val sd = SynthDef("monolith") {
@@ -24,9 +26,11 @@ object ScenarioMono extends App {
     Out.ar(0, Pan2.ar(res0 * amp))
   }
 
-  val dotC        = ScalaColliderDOT.Config()
-  dotC.input      = sd.graph
-  dotC.graphName  = sd.name
-  dotC.rateColors = true
-  ScalaColliderDOT.writePDF(dotC, file("dot") / "mono.pdf")
+  if (CREATE_PDF) {
+    val dotC        = ScalaColliderDOT.Config()
+    dotC.input      = sd.graph
+    dotC.graphName  = sd.name
+    dotC.rateColors = true
+    ScalaColliderDOT.writePDF(dotC, file("dot") / "mono.pdf")
+  }
 }

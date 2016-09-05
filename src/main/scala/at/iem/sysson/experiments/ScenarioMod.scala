@@ -21,6 +21,8 @@ import de.sciss.synth._
 import de.sciss.synth.ugen._
 
 object ScenarioMod {
+  val CREATE_PDF = false
+
   def main(args: Array[String]): Unit = {
     If.monolithic = false
 
@@ -74,7 +76,7 @@ object ScenarioMod {
 
 //    val sd = SynthDef("test", ug)
 
-    print("top", 0, ug)
+    if (CREATE_PDF) print("top", 0, ug)
 
     Server.run { s =>
       s.dumpOSC()
