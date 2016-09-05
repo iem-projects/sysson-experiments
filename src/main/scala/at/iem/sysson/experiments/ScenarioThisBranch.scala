@@ -26,17 +26,15 @@ object ScenarioThisBranch extends App {
     val freq: GE = "freq".kr
 
     val res0: GE = If (freq > 1000) Then {
-//      ThisBranch().poll(4, "sin-branch")
-      freq.poll(ThisBranch(), "branch 1")
-      SinOsc.ar(freq) * 0.2
+      val env = Sweep.ar(ThisBranch(), 1.0/2).min(1)
+      SinOsc.ar(freq) * 0.2 * env
     } ElseIf (freq > 100) Then {
-//      ThisBranch().poll(4, "dust-branch")
       freq.poll(ThisBranch(), "branch 2")
-      Dust.ar(freq)
+      val env = Sweep.ar(ThisBranch(), 1.0/1).min(1)
+      Dust.ar(freq) * env
     } Else {
-//      ThisBranch().poll(4, "noise-branch")
-      DC.kr(0).poll(ThisBranch(), "branch 3")
-      WhiteNoise.ar * 0.1
+      val env = Sweep.ar(ThisBranch(), 1.0/2).min(1)
+      WhiteNoise.ar(0.1) * env
     }
 
     Out.ar(0, Pan2.ar(res0 * amp))
