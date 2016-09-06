@@ -172,7 +172,8 @@ x.waveform (duration = 64/(s.sampleRate/64))
 ////////////////////////////////////
 
 val x = gui {
-    val condAcc: GE = "cond".kr(1)
+    // val condAcc: GE = "cond".kr(1)
+    val condAcc: GE = Phasor.kr(lo = 1, hi = 100)
     val n          = 4
     val lagDur     = (n + 0.1) * ControlDur.ir
     val t0         = Impulse.kr(0)
@@ -186,3 +187,50 @@ val x = gui {
  }
 
 x.waveform (duration = 64/(s.sampleRate/64))
+
+////////////////////////////////////
+
+def k2a_SH(in: GE) = Latch.ar(in, Impulse.ar(ControlRate.ir))
+
+gui {
+    val condAcc: GE = Stepper.kr(DelayN.kr(Impulse.kr(ControlRate.ir/2), ControlDur.ir, ControlDur.ir), lo = 1, hi = 100)
+    val t0         = Impulse.kr(0)
+    val n          = 4
+    val lagDur     = (n + 0.1) * ControlDur.ir
+    val condChange = (Delay1.kr(condAcc) sig_!= condAcc) + t0
+    val condChDly  = TDelay.kr(condChange, lagDur)
+    val condChPunch= condChange // - condChDly
+    val condChHold = SetResetFF.kr(condChPunch, condChDly)
+    val heldAcc    = Latch.kr(condAcc, condChHold)
+    val heldDly0   = DelayN.kr(heldAcc, lagDur, lagDur)
+    val heldDly    = heldDly0 + heldAcc * (heldDly0 sig_== 0)
+    k2a_SH(condAcc)
+} .waveform (duration = 32/(s.sampleRate/64))
+
+4*64*2
+
+320+256
+
+//////////////////////////
+
+val x = play {
+  val condAcc: GE = "acc".kr(1)
+  val t0         = Impulse.kr(0)
+  val n          = 4
+  val lagDur     = (n + 0.1) * ControlDur.ir
+  val condChange = (Delay1.kr(condAcc) sig_!= condAcc) + t0
+  val condChDly  = TDelay.kr(condChange, lagDur)
+  val condChPunch= condChange // - condChDly
+  val condChHold = SetResetFF.kr(condChPunch, condChDly)
+  val heldAcc    = Latch.kr(condAcc, condChHold)
+  val heldDly0   = DelayN.kr(heldAcc, lagDur, lagDur)
+  val heldDly    = heldDly0 + heldAcc * (heldDly0 sig_== 0)
+  heldDly.poll(1, "out")
+}
+
+x.set("acc" -> 2)
+x.set("acc" -> 3)
+x.set("acc" -> 4)
+x.set("acc" -> 5)
+x.set("acc" -> 1)
+x.set("acc" -> 0)
