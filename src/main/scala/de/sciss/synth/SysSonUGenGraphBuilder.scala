@@ -285,6 +285,7 @@ object SysSonUGenGraphBuilder {
       // for this through `tryRefer`, creating the
       // link on demand. We must store in the source-map
       // _before_ we create the children.
+      // XXX TODO --- Delay1 has crappy init state semantics!!
       val condChange = Delay1.kr(condAcc) sig_!= condAcc
       sourceMap += "cond-change" -> condChange.expand
       // Out.kr(bus = selBus, in = condChange)
