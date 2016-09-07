@@ -1,10 +1,7 @@
-package at.iem.sysson.experiments
+package de.sciss.synth
+package ugen
 
 import de.sciss.synth
-import de.sciss.synth.ugen.Constant
-import de.sciss.synth.ugen.impl.modular.{IfBuilderImpl => IfMod}
-import de.sciss.synth.ugen.impl.monolithic.{IfBuilderImpl => IfMono}
-import de.sciss.synth.{AudioRated, ControlRated, GE, Lazy, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike}
 
 import scala.language.implicitConversions
 
@@ -97,11 +94,13 @@ final case class IfLag(cond: GE, dur: GE) {
 }
 
 sealed trait IfOrElseIfThen[+A] {
-  import at.iem.sysson.experiments.{Else => _Else} // really, Scala?
+  import ugen.{Else => _Else} // really, Scala?
   def Else [B >: A, Out](branch: => B)(implicit result: _Else.Result[B, Out]): Out = result.make(this, branch)
+
+  def branch: SynthGraph
 }
 
-sealed trait IfThenLike[A] extends IfOrElseIfThen[A] {
+sealed trait IfThenLike[+A] extends IfOrElseIfThen[A] {
   def dur: GE
 
   def ElseIf (cond: GE): ElseIf[A] = new ElseIf(this, cond)
@@ -109,11 +108,29 @@ sealed trait IfThenLike[A] extends IfOrElseIfThen[A] {
 
 final case class IfThen[A](cond: GE, branch: SynthGraph)(val res: A)
   extends IfThenLike[A]
-    with Lazy.Expander[Unit] {
+  with Lazy {
+
+  @transient private[this] lazy val ref = new AnyRef
+
+  // ---- constructor ----
+  SynthGraph.builder.addLazy(this)
 
   def dur: GE = Constant.C0
 
-  protected def makeUGens: Unit = ???
+  private[synth] def force(b: UGenGraph.Builder): Unit = b match {
+    case sysson: SysSonUGenGraphBuilder =>
+      b.visit(ref, sysson.expandIfCase(this))
+
+    case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
+  }
+
+//  protected def makeUGens: Unit =
+//    UGenGraph.builder match {
+//      case sysson: SysSonUGenGraphBuilder =>
+//        sysson.expandIfCase(cond = cond, lagTime = Constant.C0, branch = branch)
+//
+//      case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
+//    }
 }
 final case class IfLagThen[A](cond: GE, dur: GE, branch: SynthGraph)(val res: A)
   extends IfThenLike[A]
@@ -122,7 +139,7 @@ final case class IfLagThen[A](cond: GE, dur: GE, branch: SynthGraph)(val res: A)
   protected def makeUGens: Unit = ???
 }
 
-final case class ElseIf[A](pred: IfOrElseIfThen[A], cond: GE) {
+final case class ElseIf[+A](pred: IfOrElseIfThen[A], cond: GE) {
   def Then [B >: A](branch: => B): ElseIfThen[B] = {
     var res: B = null.asInstanceOf[B]
     val g = SynthGraph {

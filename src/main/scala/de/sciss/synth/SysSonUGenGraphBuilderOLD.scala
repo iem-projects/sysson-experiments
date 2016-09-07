@@ -14,11 +14,10 @@
 
 package de.sciss.synth
 
-import at.iem.sysson.experiments.If
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, Impulse, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, If, Impulse, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}

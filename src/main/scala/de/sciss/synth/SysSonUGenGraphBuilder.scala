@@ -14,11 +14,10 @@
 
 package de.sciss.synth
 
-import at.iem.sysson.experiments.If
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, Impulse, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, If, IfThenLike, Impulse, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -238,6 +237,18 @@ object SysSonUGenGraphBuilder {
       }
 
     // ---- UGenGraph.Builder ----
+
+    private[this] var _incomplete = List.empty[InnerImpl]
+
+    def expandIfCase(c: IfThenLike[Any]): Unit = {
+      val childId     = outer.allocId()
+      val selBranchId = outer.allocId()   // branch selection / trigger signal will be written here
+      val _hasLag     = c.dur != Constant.C0
+      val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
+        branchIdx = branchIdx, hasLag = _hasLag,
+        parent = builder, name = s"inner{if $selBranchId case $branchIdx}")
+      _incomplete ::= child
+    }
 
     final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
       val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
@@ -490,4 +501,8 @@ trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
 
   /** Used by monolithic if-block. */
   def enterIfCase(cond: GE): Unit
+
+  //////////////////////////////////
+
+  def expandIfCase(c: IfThenLike[Any]): Unit
 }
