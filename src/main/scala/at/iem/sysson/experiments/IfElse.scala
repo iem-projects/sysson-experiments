@@ -1,6 +1,7 @@
 package at.iem.sysson.experiments
 
 import de.sciss.synth
+import de.sciss.synth.ugen.Constant
 import de.sciss.synth.ugen.impl.modular.{IfBuilderImpl => IfMod}
 import de.sciss.synth.ugen.impl.monolithic.{IfBuilderImpl => IfMono}
 import de.sciss.synth.{ControlRated, GE, SysSonUGenGraphBuilder, UGenGraph, UGenInLike}
@@ -65,11 +66,14 @@ import scala.language.implicitConversions
 object If {
   var monolithic: Boolean = true
 
-  def apply(cond: GE): IfBuilder = if (If.monolithic) IfMono(cond) else IfMod(cond)
+  def apply(cond: GE): IfBuilder = if (If.monolithic) IfMono(cond) else IfMod(cond = cond, lagTime = Constant.C0)
 }
 
 object IfLag {
-  def apply(cond: GE, dur: GE): IfBuilder = ??? // if (If.monolithic) IfMono(cond) else IfMod(cond)
+  def apply(cond: GE, dur: GE): IfBuilder = {
+    if (If.monolithic) throw new NotImplementedError("IfLag for monolithic")
+    IfMod(cond, lagTime = dur)
+  }
 }
 
 trait IfBuilder {
