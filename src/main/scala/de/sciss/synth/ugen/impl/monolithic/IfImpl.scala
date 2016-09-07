@@ -14,14 +14,14 @@
 
 package de.sciss.synth.ugen.impl.monolithic
 
-import at.iem.sysson.experiments.{ElseBuilderT, ElseIfBuilderT, IfBuilderT, IfT}
+import at.iem.sysson.experiments.{ElseBuilderOLD, ElseIfBuilderOLD, IfBuilderOLD, IfOLD}
 import de.sciss.synth.ugen.{Constant, UnaryOpUGen}
 import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 
 object IfBuilderImpl {
-  def apply(cond: GE, lagTime: GE): IfBuilderT = new IfBuilderImpl(cond = cond, lagTime = lagTime)
+  def apply(cond: GE, lagTime: GE): IfBuilderOLD = new IfBuilderImpl(cond = cond, lagTime = lagTime)
 
   def mkCase[A](cond: GE, branch: => A): IfCase[A] = {
     var res: A = null.asInstanceOf[A]
@@ -33,43 +33,43 @@ object IfBuilderImpl {
   }
 }
 
-final class IfBuilderImpl(cond: GE, lagTime: GE) extends IfBuilderT {
+final class IfBuilderImpl(cond: GE, lagTime: GE) extends IfBuilderOLD {
   override def toString = s"If (...)@${hashCode().toHexString}"
 
-  def Then[A](branch: => A): IfT[A] = {
+  def Then[A](branch: => A): IfOLD[A] = {
     val c = IfBuilderImpl.mkCase(cond, branch)
     IfImpl(c :: Nil, lagTime = lagTime)
   }
 }
 
-final class ElseIfBuilderImpl[A](cases: List[IfCase[A]], cond: GE, lagTime: GE) extends ElseIfBuilderT[A] {
+final class ElseIfBuilderImpl[A](cases: List[IfCase[A]], cond: GE, lagTime: GE) extends ElseIfBuilderOLD[A] {
   override def toString = s"If (...) Then ... ElseIf (...)@${hashCode().toHexString}"
 
-  def Then[B >: A](branch: => B): IfT[B] = {
+  def Then[B >: A](branch: => B): IfOLD[B] = {
     val c = IfBuilderImpl.mkCase(cond, branch)
     new IfImpl[B](cases :+ c, lagTime = lagTime)
   }
 }
 
-trait IfImplLike[A] extends IfT[A] {
+trait IfImplLike[A] extends IfOLD[A] {
   override def toString = s"If (...) Then ... @${hashCode().toHexString}"
 
   protected def cases: List[IfCase[A]]
   protected def lagTime: GE
 
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilderT.Result[B, Out]): Out = {
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilderOLD.Result[B, Out]): Out = {
     val c = IfBuilderImpl.mkCase(1, branch) // XXX TODO --- cheesy way of a `true always` condition?
     result match {
-      case ElseBuilderT.GE =>
+      case ElseBuilderOLD.GE =>
         IfGEImpl((cases :+ c).asInstanceOf[List[IfCase[GE]]], lagTime = lagTime) // XXX TODO --- how to remove the cast?
 
-      case _: ElseBuilderT.Unit[_] =>
+      case _: ElseBuilderOLD.Unit[_] =>
         IfUnitImpl(cases :+ c)
         ()
     }
   }
 
-  def ElseIf(cond: GE): ElseIfBuilderT[A] = new ElseIfBuilderImpl(cases, cond = cond, lagTime = lagTime)
+  def ElseIf(cond: GE): ElseIfBuilderOLD[A] = new ElseIfBuilderImpl(cases, cond = cond, lagTime = lagTime)
 }
 
 final case class IfImpl[A](cases: List[IfCase[A]], lagTime: GE) extends IfImplLike[A]

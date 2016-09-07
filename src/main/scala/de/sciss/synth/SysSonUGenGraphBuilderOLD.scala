@@ -1,5 +1,5 @@
 /*
- *  SysSonUGenGraphBuilder.scala
+ *  SysSonUGenGraphBuilderOLD.scala
  *  (SysSon-Experiments)
  *
  *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
@@ -23,7 +23,7 @@ import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, Im
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
-object SysSonUGenGraphBuilder {
+object SysSonUGenGraphBuilderOLD {
   final case class Link(id: Int, rate: Rate, numChannels: Int) {
     require(rate == control || rate == audio, s"Unsupported link rate $rate")
   }
@@ -62,7 +62,7 @@ object SysSonUGenGraphBuilder {
 
   // single control for setting the bus index
   def linkCtlName(id: Int): String =
-  s"$$ln$id"
+    s"$$ln$id"
 
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
@@ -101,7 +101,7 @@ object SysSonUGenGraphBuilder {
     - handle controls over boundaries
 
    */
-  private trait Impl extends SysSonUGenGraphBuilder with SynthGraph.Builder {
+  private trait Impl extends SysSonUGenGraphBuilderOLD with SynthGraph.Builder {
     builder =>
 
     // ---- abstract ----
@@ -193,7 +193,7 @@ object SysSonUGenGraphBuilder {
 
     // ---- SynthGraph.Builder ----
 
-    //    final def addLazy(g: Lazy): Unit = sources += g
+//    final def addLazy(g: Lazy): Unit = sources += g
     final def addLazy(g: Lazy): Unit = sources :+= g
 
     final def addControlProxy(proxy: ControlProxyLike): Unit = controlProxies += proxy
@@ -418,7 +418,7 @@ object SysSonUGenGraphBuilder {
         } { in => // case (link, in) =>
           // log(this, s"...${smartRef(ref)} -> found in parent: $link")
           log(this, s"...${smartRef(ref)} -> found in parent")
-          //          _linkIn ::= link
+//          _linkIn ::= link
           in
         }
         sourceMap += ref -> exp
@@ -474,12 +474,12 @@ object SysSonUGenGraphBuilder {
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
 
   def enterIfCase(cond: GE): Unit = UGenGraph.builder match {
-    case sysson: SysSonUGenGraphBuilder => sysson.enterIfCase(cond)
+    case sysson: SysSonUGenGraphBuilderOLD => sysson.enterIfCase(cond)
     case _ => // ignore
   }
 }
-trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
-  import SysSonUGenGraphBuilder.Link
+trait SysSonUGenGraphBuilderOLD extends BasicUGenGraphBuilder {
+  import SysSonUGenGraphBuilderOLD.Link
 
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 

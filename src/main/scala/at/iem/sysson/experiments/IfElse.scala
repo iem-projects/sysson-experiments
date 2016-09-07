@@ -97,10 +97,9 @@ final case class IfLag(cond: GE, dur: GE) {
 }
 
 sealed trait IfOrElseIfThen[+A] {
-  def Else [B >: A, Out](branch: => B)(implicit result: Else.Result[B, Out]): Out = result.make(this, branch)
+  import at.iem.sysson.experiments.{Else => _Else} // really, Scala?
+  def Else [B >: A, Out](branch: => B)(implicit result: _Else.Result[B, Out]): Out = result.make(this, branch)
 }
-
-// final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
 
 sealed trait IfThenLike[A] extends IfOrElseIfThen[A] {
   def dur: GE
@@ -193,34 +192,4 @@ final case class ThisBranch() extends GE.Lazy with ControlRated {
       case sysson: SysSonUGenGraphBuilder => sysson.thisBranch
       case _ => sys.error(s"Cannot expand ThisBranch outside of SysSon UGen graph builder")
     }
-}
-
-// ---- OLD ----
-
-trait IfBuilderT {
-  def Then [A](branch: => A): IfT[A]
-}
-
-trait IfT[A] {
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilderT.Result[B, Out]): Out
-  def ElseIf (cond: GE): ElseIfBuilderT[A]
-}
-
-object ElseBuilderT {
-  object Result extends LowPri {
-    implicit def GE: ElseBuilderT.GE.type = ElseBuilderT.GE
-  }
-  sealed trait Result[-A, Out]
-
-  object GE           extends Result[synth.GE, synth.GE  ]
-  final class Unit[A] extends Result[A       , scala.Unit]
-
-  trait LowPri {
-    implicit final def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]
-    private final val instance = new Unit[Any]
-  }
-}
-
-trait ElseIfBuilderT[A] {
-  def Then [B >: A](branch: => B): IfT[B]
 }
