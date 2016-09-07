@@ -358,8 +358,9 @@ object SysSonUGenGraphBuilder {
             parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
           val (childChans, childRes) = child.run {
             val res     = child.buildInner(graphC)
-            val sig     = c.res.expand
-            val chans   = sig.outputs.size
+            println("WARNING: TODO")
+            // val sig     = c.res.expand
+            val chans   = 1 // sig.outputs.size
             (chans, res)
           }
           (math.max(numCh0, childChans), childRes :: children0)

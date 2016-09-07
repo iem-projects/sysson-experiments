@@ -96,8 +96,18 @@ final case class IfGEImpl(cases: List[IfCase[GE]], lagTime: GE) extends GE with 
 
   def rate: MaybeRate = MaybeRate.max_?(cases.map(_.res.rate): _*)
 
-  private[synth] def expand: UGenInLike =
-    UGenGraph.builder.visit(ref, throw new IllegalStateException("IfGE - encountering `expand` without prior `force`"))
+//  private[synth] def expand: UGenInLike =
+//    UGenGraph.builder.visit(ref, throw new IllegalStateException("IfGE - encountering `expand` without prior `force`"))
+
+  private[synth] def expand: UGenInLike = {
+    val res = UGenGraph.builder.visit[Any](ref, throw new IllegalStateException("IfGE - encountering `expand` without prior `force`"))
+    res match {
+      case u: UGenInLike => u
+      case _ =>
+        println("Oh noes")
+        ???
+    }
+  }
 
   // the `expandIfCases` will store the reference!
   private[synth] def force(b: Builder): Unit = UGenGraph.builder match {
