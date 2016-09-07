@@ -4,7 +4,7 @@ import de.sciss.synth
 import de.sciss.synth.ugen.Constant
 import de.sciss.synth.ugen.impl.modular.{IfBuilderImpl => IfMod}
 import de.sciss.synth.ugen.impl.monolithic.{IfBuilderImpl => IfMono}
-import de.sciss.synth.{ControlRated, GE, SysSonUGenGraphBuilder, UGenGraph, UGenInLike}
+import de.sciss.synth.{AudioRated, ControlRated, GE, Lazy, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike}
 
 import scala.language.implicitConversions
 
@@ -66,38 +66,149 @@ import scala.language.implicitConversions
 object If {
   var monolithic: Boolean = true
 
-  def apply(cond: GE): IfBuilderT =
-    if (If.monolithic) IfMono(cond = cond, lagTime = Constant.C0)
-    else               IfMod (cond = cond, lagTime = Constant.C0)
+//  def apply(cond: GE): IfBuilderT =
+//    if (If.monolithic) IfMono(cond = cond, lagTime = Constant.C0)
+//    else               IfMod (cond = cond, lagTime = Constant.C0)
+}
+final case class If(cond: GE) {
+  def Then [A](branch: => A): IfThen[A] = {
+    var res: A = null.asInstanceOf[A]
+    val g = SynthGraph {
+      res = branch
+    }
+    IfThen(cond, g)(res)
+  }
 }
 
-object IfLag {
-  def apply(cond: GE, dur: GE): IfBuilderT =
-    if (If.monolithic) IfMono(cond = cond, lagTime = dur)
-    else               IfMod (cond = cond, lagTime = dur)
+//object IfLag {
+//  def apply(cond: GE, dur: GE): IfBuilderT =
+//    if (If.monolithic) IfMono(cond = cond, lagTime = dur)
+//    else               IfMod (cond = cond, lagTime = dur)
+//}
+
+final case class IfLag(cond: GE, dur: GE) {
+  def Then [A](branch: => A): IfLagThen[A] = {
+    var res: A = null.asInstanceOf[A]
+    val g = SynthGraph {
+      res = branch
+    }
+    IfLagThen(cond = cond, dur = dur, branch = g)(res)
+  }
 }
+
+sealed trait IfOrElseIfThen[+A] {
+  def Else [B >: A, Out](branch: => B)(implicit result: Else.Result[B, Out]): Out = result.make(this, branch)
+}
+
+// final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
+
+sealed trait IfThenLike[A] extends IfOrElseIfThen[A] {
+  def dur: GE
+
+  def ElseIf (cond: GE): ElseIf[A] = new ElseIf(this, cond)
+}
+
+final case class IfThen[A](cond: GE, branch: SynthGraph)(val res: A)
+  extends IfThenLike[A]
+    with Lazy.Expander[Unit] {
+
+  def dur: GE = Constant.C0
+
+  protected def makeUGens: Unit = ???
+}
+final case class IfLagThen[A](cond: GE, dur: GE, branch: SynthGraph)(val res: A)
+  extends IfThenLike[A]
+  with Lazy.Expander[Unit] {
+
+  protected def makeUGens: Unit = ???
+}
+
+final case class ElseIf[A](pred: IfOrElseIfThen[A], cond: GE) {
+  def Then [B >: A](branch: => B): ElseIfThen[B] = {
+    var res: B = null.asInstanceOf[B]
+    val g = SynthGraph {
+      res = branch
+    }
+    ElseIfThen[B](pred, cond, g)(res)
+  }
+}
+
+final case class ElseIfThen[A](pred: IfOrElseIfThen[A], cond: GE, branch: SynthGraph)(val res: A)
+  extends IfOrElseIfThen[A]
+    with Lazy.Expander[Unit] {
+
+  def ElseIf (cond: GE): ElseIf[A] = new ElseIf(this, cond)
+
+  protected def makeUGens: Unit = ???
+}
+
+object Else {
+  object Result extends LowPri {
+    implicit def GE: Else.GE.type = Else.GE
+  }
+  sealed trait Result[-A, Out] {
+    def make(pred: IfOrElseIfThen[A], branch: => A): Out
+  }
+
+  object GE extends Result[synth.GE, ElseGE] {
+    def make(pred: IfOrElseIfThen[GE], branch: => GE): ElseGE = {
+      var res: GE = null
+      val g = SynthGraph {
+        res = branch
+      }
+      ElseGE(pred, g)(res)
+    }
+  }
+
+  final class Unit[A] extends Result[A, ElseUnit] {
+    def make(pred: IfOrElseIfThen[A], branch: => A): ElseUnit =  {
+      val g = SynthGraph {
+        branch
+      }
+      ElseUnit(pred, g)
+    }
+  }
+
+  trait LowPri {
+    implicit final def Unit[A]: Unit[A] = instance.asInstanceOf[Unit[A]]
+    private final val instance = new Unit[Any]
+  }
+}
+
+final case class ElseUnit(pred: IfOrElseIfThen[Any], branch: SynthGraph)
+  extends Lazy.Expander[Unit] {
+
+  protected def makeUGens: Unit = ???
+}
+
+final case class ElseGE(pred: IfOrElseIfThen[GE], branch: SynthGraph)(val res: GE)
+  extends GE.Lazy with AudioRated {
+
+  protected def makeUGens: UGenInLike = ???
+}
+
+final case class ThisBranch() extends GE.Lazy with ControlRated {
+  protected def makeUGens: UGenInLike =
+    UGenGraph.builder match {
+      case sysson: SysSonUGenGraphBuilder => sysson.thisBranch
+      case _ => sys.error(s"Cannot expand ThisBranch outside of SysSon UGen graph builder")
+    }
+}
+
+// ---- OLD ----
 
 trait IfBuilderT {
   def Then [A](branch: => A): IfT[A]
 }
 
-final case class IfBuilder() {
-  def Then [A](branch: => A): If[A] = ???
-}
-
 trait IfT[A] {
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilderT.Result[B, Out]): Out
   def ElseIf (cond: GE): ElseIfBuilderT[A]
 }
 
-final case class If[A]() {
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = ???
-  def ElseIf (cond: GE): ElseIfBuilder[A] = ???
-}
-
-object ElseBuilder {
+object ElseBuilderT {
   object Result extends LowPri {
-    implicit def GE: ElseBuilder.GE.type = ElseBuilder.GE
+    implicit def GE: ElseBuilderT.GE.type = ElseBuilderT.GE
   }
   sealed trait Result[-A, Out]
 
@@ -112,16 +223,4 @@ object ElseBuilder {
 
 trait ElseIfBuilderT[A] {
   def Then [B >: A](branch: => B): IfT[B]
-}
-
-final case class ElseIfBuilder[A]() {
-  def Then [B >: A](branch: => B): If[B] = ???
-}
-
-final case class ThisBranch() extends GE.Lazy with ControlRated {
-  protected def makeUGens: UGenInLike =
-    UGenGraph.builder match {
-      case sysson: SysSonUGenGraphBuilder => sysson.thisBranch
-      case _ => sys.error(s"Cannot expand ThisBranch outside of SysSon UGen graph builder")
-    }
 }

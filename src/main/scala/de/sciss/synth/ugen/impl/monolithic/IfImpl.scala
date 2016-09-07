@@ -14,7 +14,7 @@
 
 package de.sciss.synth.ugen.impl.monolithic
 
-import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, ElseIfBuilderT, If, IfBuilder, IfBuilderT, IfT}
+import at.iem.sysson.experiments.{ElseBuilderT, ElseIfBuilderT, IfBuilderT, IfT}
 import de.sciss.synth.ugen.{Constant, UnaryOpUGen}
 import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
 
@@ -57,13 +57,13 @@ trait IfImplLike[A] extends IfT[A] {
   protected def cases: List[IfCase[A]]
   protected def lagTime: GE
 
-  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = {
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilderT.Result[B, Out]): Out = {
     val c = IfBuilderImpl.mkCase(1, branch) // XXX TODO --- cheesy way of a `true always` condition?
     result match {
-      case ElseBuilder.GE =>
+      case ElseBuilderT.GE =>
         IfGEImpl((cases :+ c).asInstanceOf[List[IfCase[GE]]], lagTime = lagTime) // XXX TODO --- how to remove the cast?
 
-      case _: ElseBuilder.Unit[_] =>
+      case _: ElseBuilderT.Unit[_] =>
         IfUnitImpl(cases :+ c)
         ()
     }
