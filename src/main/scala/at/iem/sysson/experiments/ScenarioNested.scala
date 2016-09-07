@@ -79,7 +79,7 @@ object ScenarioNested extends App {
   if (CREATE_PDF) ScenarioMod.print("top", 0, ug)
 
   Server.run { s =>
-    val syn = ScenarioMod.play(ug, args = List("freq" -> 0))
+    /* val syn = */ ScenarioMod.play(ug, args = List("freq" -> 0))
     Thread.sleep(20000)
     s.quit()
     sys.exit()
