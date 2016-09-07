@@ -251,7 +251,19 @@ object SysSonUGenGraphBuilder {
             val _link       = mkAndAddLink(ref = ref, sigRate = audio, numChannels = numChannels)
             val ctlName     = linkCtlName(_link.id)
 
-            ref.cases.zip(caseChans).foreach { case ((c, child), sigChans) =>
+            val selBranchId = ??? : Int
+            val _hasLag  = ??? : Boolean
+
+            ref.cases.zip(caseChans).zipWithIndex.foreach { case (((c, _), sigChans), branchIdx) =>
+              val childId = outer.allocId()
+              val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
+                branchIdx = branchIdx, hasLag = _hasLag,
+                parent = builder, name = s"inner{if $selBranchId case $branchIdx}")
+              val childRes = child.run {
+                child.buildInner(c.branch)
+              }
+              _children ::= childRes
+
               child.run {
                 val sig     = c.res
                 val sigPad  = if (sigChans == numChannels) sig else Vector.tabulate(numChannels)(sig \ _): GE
@@ -367,49 +379,18 @@ object SysSonUGenGraphBuilder {
 
         val childId = outer.allocId()
         val nodeCtl = pauseNodeCtlName(childId)
-        // condEq.poll(4, s"gate $branchIdx")
         Pause.kr(gate = condEq, node = nodeCtl.ir)
 
-//          val resultCtl = linkCtlName(resultLinkId)
-//
-//          val graphB = SynthGraph {
-//            val resultBus   = resultCtl.ir
-//            val resultRate  = audio // XXX TODO --- how to get rate?
-//            Out(resultRate, resultBus, c.res)
-//          }
-
-        // now call `UGenGraph.use()` with a child builder, and expand
-        // both `c.branch` and `graphB`.
-        val graphC = c.branch
-//            .copy(sources = c.branch.sources ++ graphB.sources,
-//            controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
         val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
           branchIdx = branchIdx, hasLag = _hasLag,
           parent = builder, name = s"inner{if $selBranchId case $branchIdx}")
         val childRes = child.run {
-          child.buildInner(graphC)
-//            val chans   = c.res match {
-//              case i: IfGEImpl =>
-//                // XXX TODO --- work around for the time where we
-//                // do want to calculate the number of channels
-//                // and store the result-link eagerly
-//                i.expandAny match {
-//                  case u: UGenInLike  => u.outputs.size
-//                  case l: Link        => l.numChannels
-//                }
-//              case other =>
-//                val sig = other.expand
-//                sig.outputs.size
-//            }
+          child.buildInner(c.branch)
         }
         _children ::= childRes
         (c, child)
       }
 
-//      val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
-//      _children   = children1
-//      _links    ::= linkRes
-//      linkRes
       new ExpandedIfCases(exp)
     }
   }
