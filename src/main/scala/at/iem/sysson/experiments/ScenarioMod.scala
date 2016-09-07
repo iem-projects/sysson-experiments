@@ -21,7 +21,7 @@ import de.sciss.synth._
 import de.sciss.synth.ugen._
 
 object ScenarioMod {
-  val CREATE_PDF = false
+  val CREATE_PDF = true
 
   def main(args: Array[String]): Unit = {
     If.monolithic = false
@@ -58,15 +58,11 @@ object ScenarioMod {
       val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
-        // WhiteNoise.ar.poll(0, "HELLO SIN")
         SinOsc.ar(freq)
       } ElseIf (freq > 100) Then {
-        // WhiteNoise.ar.poll(0, "HELLO DUST")
         Dust.ar(freq)
       } Else {
-        // WhiteNoise.ar.poll(0, "HELLO NOISE")
         WhiteNoise.ar
-//        WhiteNoise.ar(Seq.fill(2)(1))
       }
 
       Out.ar(0, Pan2.ar(res0 * amp))
