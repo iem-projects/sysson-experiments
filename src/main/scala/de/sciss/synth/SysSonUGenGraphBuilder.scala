@@ -252,23 +252,18 @@ object SysSonUGenGraphBuilder {
 
       // calculate the accumulated conditions signal,
       // and pair the if-cases with their condition-GE
-      val (condAcc, condEqs) = ((0: GE, List.empty[(IfCase[GE], GE)]) /: cases.zipWithIndex) {
-        case ((condAcc0, condEqs0), (c, branchIdx)) =>
+      val condAcc = ((0: GE) /: cases.zipWithIndex) {
+        case (condAcc0, (c, branchIdx)) =>
           // make sure the condition is zero or one
           val condBin = forceBinary(c.cond)
-          val (condAcc1, condEq1) = if (branchIdx == 0) {
-            (condBin, condBin)
+          if (branchIdx == 0) {
+            condBin
           } else {
             // then "bit-shift" it.
             val condShift = condBin << branchIdx
             // then collect the bits in a "bit-field"
-            val _condAcc1 = condAcc0 | condShift
-            // then the branch condition is met when the fields masked up to here equal the shifted single condition
-            val condMask = if (branchIdx == lastBranchIdx) _condAcc1 else _condAcc1 & ((1 << (branchIdx + 1)) - 1)
-            val condEq = condMask sig_== (1 << branchIdx)
-            (_condAcc1, condEq)
+            condAcc0 | condShift
           }
-          (condAcc1, (c, condEq1) :: condEqs0)
       }
 
       //      val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
@@ -298,9 +293,13 @@ object SysSonUGenGraphBuilder {
       // not contribute to the higher channels.
       // We can add the other behaviour later.
 
-      val (numChannels, children1) = ((0, _children) /: condEqs.reverse.zipWithIndex) {
-        case ((numCh0, children0), ((c, condEq), branchIdx)) =>
+      val (numChannels, children1) = ((0, _children) /: cases.zipWithIndex) {
+        case ((numCh0, children0), (c, branchIdx)) =>
           import ugen._
+          // the branch condition is met when the fields masked up to here equal the shifted single condition
+          val condMask = if (branchIdx == lastBranchIdx) condAcc else condAcc & ((1 << (branchIdx + 1)) - 1)
+          val condEq = condMask sig_== (1 << branchIdx)
+
           val childId = outer.allocId()
           val nodeCtl = pauseNodeCtlName(childId)
           // condEq.poll(4, s"gate $branchIdx")
