@@ -17,7 +17,7 @@ package de.sciss.synth
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.IfGEImpl
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseIfThen, If, IfOrElseIfThen, IfThenLike, Impulse, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -35,7 +35,7 @@ object NestedUGenGraphBuilder {
     var numChannels = 0   // of the result signal
   }
 
-  final class ExpIfCase(val top: ExpIfTop, val peer: IfOrElseIfThen[Any], val predMask: Int, val branchIdx: Int) {
+  final class ExpIfCase(val top: ExpIfTop, val peer: Then[Any], val predMask: Int, val branchIdx: Int) {
     var resultUsed = false
 
     val thisMask = predMask | (1 << branchIdx)
@@ -266,7 +266,7 @@ object NestedUGenGraphBuilder {
 
     private[this] var expIfTops = List.empty[ExpIfTop]
 
-    def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase = {
+    def expandIfCase(c: Then[Any]): ExpIfCase = {
       // create a new ExpIfCase
       val res = c match {
         case i: IfThenLike[Any] =>
@@ -274,7 +274,7 @@ object NestedUGenGraphBuilder {
           expIfTops ::= expTop
           new ExpIfCase(expTop, peer = i, predMask = 0, branchIdx = 0)
 
-        case e: ElseIfThen[Any] =>
+        case e: ElseOrElseIfThen[Any] =>
           val expPar = e.pred.visit(this)
           val expTop = expPar.top
           new ExpIfCase(expTop, peer = e,
@@ -307,7 +307,7 @@ object NestedUGenGraphBuilder {
 //      mkIfCaseChild(c, _branchIdx = 0, selBranchId = selBranchId, _hasLag = _hasLag)
 //    }
 //
-//    private def mkIfCaseChild(c: IfOrElseIfThen[Any], _branchIdx: Int, selBranchId: Int, _hasLag: Boolean): Unit = {
+//    private def mkIfCaseChild(c: Then[Any], _branchIdx: Int, selBranchId: Int, _hasLag: Boolean): Unit = {
 //      val childId     = outer.allocId()
 //      val child       = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
 //        branchIdx = _branchIdx, hasLag = _hasLag,
@@ -317,7 +317,7 @@ object NestedUGenGraphBuilder {
 
 //    // returns top
 //    @tailrec
-//    private def getIfThen(c: IfOrElseIfThen[Any]): IfThenLike[Any] = c match {
+//    private def getIfThen(c: Then[Any]): IfThenLike[Any] = c match {
 //      case top: IfThenLike[Any] => top
 //      case bot: ElseIfThen[Any] => getIfThen(bot.pred)
 //    }
@@ -402,7 +402,7 @@ object NestedUGenGraphBuilder {
       val lastBranchIdx     = branchCount - 1
       lazy val resultLinkId = outer.allocId()   // summed branch audio output will be written here
 
-      branches.foreach { c =>
+      branches.reverse.foreach { c =>
         import ugen._
         // the branch condition is met when the fields masked up to here equal the shifted single condition
         val condMask  = if (c.branchIdx == lastBranchIdx) condAccT else condAccT & c.thisMask
@@ -685,5 +685,5 @@ trait NestedUGenGraphBuilder extends BasicUGenGraphBuilder {
 
   //////////////////////////////////
 
-  def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase
+  def expandIfCase(c: Then[Any]): ExpIfCase
 }
