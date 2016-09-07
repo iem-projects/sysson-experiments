@@ -66,14 +66,15 @@ import scala.language.implicitConversions
 object If {
   var monolithic: Boolean = true
 
-  def apply(cond: GE): IfBuilder = if (If.monolithic) IfMono(cond) else IfMod(cond = cond, lagTime = Constant.C0)
+  def apply(cond: GE): IfBuilder =
+    if (If.monolithic) IfMono(cond = cond, lagTime = Constant.C0)
+    else               IfMod (cond = cond, lagTime = Constant.C0)
 }
 
 object IfLag {
-  def apply(cond: GE, dur: GE): IfBuilder = {
-    if (If.monolithic) throw new NotImplementedError("IfLag for monolithic")
-    IfMod(cond, lagTime = dur)
-  }
+  def apply(cond: GE, dur: GE): IfBuilder =
+    if (If.monolithic) IfMono(cond = cond, lagTime = dur)
+    else               IfMod (cond = cond, lagTime = dur)
 }
 
 trait IfBuilder {

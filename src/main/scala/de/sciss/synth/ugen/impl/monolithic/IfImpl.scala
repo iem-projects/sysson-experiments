@@ -21,7 +21,7 @@ import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, 
 import scala.Predef.{any2stringadd => _, _}
 
 object IfBuilderImpl {
-  def apply(cond: GE): IfBuilder = new IfBuilderImpl(cond)
+  def apply(cond: GE, lagTime: GE): IfBuilder = new IfBuilderImpl(cond = cond, lagTime = lagTime)
 
   def mkCase[A](cond: GE, branch: => A): IfCase[A] = {
     var res: A = null.asInstanceOf[A]
@@ -33,21 +33,21 @@ object IfBuilderImpl {
   }
 }
 
-final class IfBuilderImpl(cond: GE) extends IfBuilder {
+final class IfBuilderImpl(cond: GE, lagTime: GE) extends IfBuilder {
   override def toString = s"If (...)@${hashCode().toHexString}"
 
   def Then[A](branch: => A): If[A] = {
     val c = IfBuilderImpl.mkCase(cond, branch)
-    IfImpl(c :: Nil)
+    IfImpl(c :: Nil, lagTime = lagTime)
   }
 }
 
-final class ElseIfBuilderImpl[A](cases: List[IfCase[A]], cond: GE) extends ElseIfBuilder[A] {
+final class ElseIfBuilderImpl[A](cases: List[IfCase[A]], cond: GE, lagTime: GE) extends ElseIfBuilder[A] {
   override def toString = s"If (...) Then ... ElseIf (...)@${hashCode().toHexString}"
 
   def Then[B >: A](branch: => B): If[B] = {
     val c = IfBuilderImpl.mkCase(cond, branch)
-    new IfImpl[B](cases :+ c)
+    new IfImpl[B](cases :+ c, lagTime = lagTime)
   }
 }
 
@@ -55,12 +55,13 @@ trait IfImplLike[A] extends If[A] {
   override def toString = s"If (...) Then ... @${hashCode().toHexString}"
 
   protected def cases: List[IfCase[A]]
+  protected def lagTime: GE
 
   def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = {
     val c = IfBuilderImpl.mkCase(1, branch) // XXX TODO --- cheesy way of a `true always` condition?
     result match {
       case ElseBuilder.GE =>
-        IfGEImpl((cases :+ c).asInstanceOf[List[IfCase[GE]]]) // XXX TODO --- how to remove the cast?
+        IfGEImpl((cases :+ c).asInstanceOf[List[IfCase[GE]]], lagTime = lagTime) // XXX TODO --- how to remove the cast?
 
       case _: ElseBuilder.Unit[_] =>
         IfUnitImpl(cases :+ c)
@@ -68,10 +69,10 @@ trait IfImplLike[A] extends If[A] {
     }
   }
 
-  def ElseIf(cond: GE): ElseIfBuilder[A] = new ElseIfBuilderImpl(cases, cond)
+  def ElseIf(cond: GE): ElseIfBuilder[A] = new ElseIfBuilderImpl(cases, cond = cond, lagTime = lagTime)
 }
 
-final case class IfImpl[A](cases: List[IfCase[A]]) extends IfImplLike[A]
+final case class IfImpl[A](cases: List[IfCase[A]], lagTime: GE) extends IfImplLike[A]
 
 final case class IfCase[+A](cond: GE, branch: SynthGraph)(val res: A)
 
@@ -81,17 +82,19 @@ final case class IfUnitImpl(cases: List[IfCase[Any]]) extends Lazy.Expander[Unit
   protected def makeUGens: Unit = ???
 }
 
-final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE.Lazy {
+final case class IfGEImpl(cases: List[IfCase[GE]], lagTime: GE) extends GE.Lazy {
   def rate: MaybeRate = MaybeRate.max_?(cases.map(_.res.rate): _*)
 
   protected def makeUGens: UGenInLike = {
+    if (lagTime != Constant.C0) ???
+
     val (_, res) = ((0: GE, 0: GE) /: cases) { case ((condAcc, resAcc), c) =>
       val condNow: GE = condAcc match {
-        case Constant(0)  => c.cond
+        case Constant.C0  => c.cond
         case cPrev        => UnaryOpUGen.Not.make(cPrev) & c.cond
       }
       val condNext: GE = condAcc match {
-        case Constant(0)  => c.cond
+        case Constant.C0  => c.cond
         case cPrev        => cPrev | c.cond
       }
       SysSonUGenGraphBuilder.enterIfCase(condNow)
