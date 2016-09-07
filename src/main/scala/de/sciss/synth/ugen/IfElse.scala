@@ -103,6 +103,7 @@ sealed trait IfOrElseIfThen[+A] extends Lazy {
   import ugen.{Else => _Else} // really, Scala?
   def Else [B >: A, Out](branch: => B)(implicit result: _Else.Result[B, Out]): Out = result.make(this, branch)
 
+  def cond  : GE
   def branch: SynthGraph
 
   private[synth] final def force(b: UGenGraph.Builder): Unit = UGenGraph.builder match {

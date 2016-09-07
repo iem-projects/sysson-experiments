@@ -7,7 +7,7 @@ import de.sciss.synth.{GE, NestedUGenGraphBuilder, Server, SynthGraph, ugen}
 object ScenarioUnit extends App {
   import ScenarioMod.play
 
-  val CREATE_PDF = true
+  val CREATE_PDF = false
 
   If.monolithic = false
 

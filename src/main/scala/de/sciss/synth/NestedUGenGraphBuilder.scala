@@ -16,10 +16,10 @@ package de.sciss.synth
 
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
+import de.sciss.synth.ugen.impl.modular.IfGEImpl
 import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseIfThen, If, IfOrElseIfThen, IfThenLike, Impulse, In, Out, UnaryOpUGen}
 
-import scala.annotation.{elidable, tailrec}
+import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object NestedUGenGraphBuilder {
@@ -27,14 +27,18 @@ object NestedUGenGraphBuilder {
     require(rate == control || rate == audio, s"Unsupported link rate $rate")
   }
 
-  final class ExpIfTop(val lagTime: GE) {
+  final class ExpIfTop(val lagTime: GE, val selBranchId: Int) {
     val hasLag      = lagTime != Constant.C0
     var branchCount = 0
     var branches    = List.empty[ExpIfCase]
+    var condAcc: GE = Constant.C0
+    var numChannels = 0   // of the result signal
   }
 
-  final class ExpIfCase(val top: ExpIfTop, val predMask: Int, val branchIdx: Int) {
+  final class ExpIfCase(val top: ExpIfTop, val peer: IfOrElseIfThen[Any], val predMask: Int, val branchIdx: Int) {
     var resultUsed = false
+
+    val thisMask = predMask | (1 << branchIdx)
   }
 
   def get: NestedUGenGraphBuilder = UGenGraph.builder match {
@@ -124,16 +128,8 @@ object NestedUGenGraphBuilder {
     def parent: Impl
     def childId: Int
 
-    /** The link identifier for the control-rate bus
-      * that carries the selected-branch-signal.
-      */
-    def selectedBranchId: Int
-
-    /** Index of current branch or if-case in the current if-block. */
-    def branchIdx: Int
-
-    /** Whether this child is an if-case with lag-time. */
-    def hasLag: Boolean
+    /** Corresponding if-case or `None` if not part of an if-block. */
+    def thisExpIfCase: Option[ExpIfCase]
 
     // ---- impl ----
 
@@ -151,11 +147,15 @@ object NestedUGenGraphBuilder {
     def thisBranch: GE =
       if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
       else {
-        val in0 = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
-        if (hasLag) {
+        val c     = thisExpIfCase                .getOrElse(errorOutsideBranch())
+        val in0   = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
+        val top   = c.top
+        if (top.hasLag) {
           // we don't know if we are the last branch, so simply skip that optimization
-          val condMask  = /* if (branchIdx == lastBranchIdx) in0 else */ in0 & ((1 << (branchIdx + 1)) - 1)
-          condMask sig_== (1 << branchIdx)
+          import c.branchIdx
+          val lastBranchIdx = top.branchCount - 1
+          val condMask = if (branchIdx == lastBranchIdx) in0 else in0 & c.thisMask
+          if (branchIdx == 0) condMask else condMask sig_== (1 << branchIdx)
         } else {
           in0
         }
@@ -183,8 +183,7 @@ object NestedUGenGraphBuilder {
             case _: IfGEImpl =>
               // XXX TODO --- what to do with the damn control proxies?
               val graphC  = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
-              val child   = new InnerImpl(childId = -1, selectedBranchId = -1, branchIdx = -1,
-                hasLag = false, parent = builder, name = "continue")
+              val child   = new InnerImpl(childId = -1, thisExpIfCase = None, parent = builder, name = "continue")
               _children ::= child.build(graphC)
               i = sz    // "skip rest" in the outer graph
             case _ =>
@@ -192,11 +191,19 @@ object NestedUGenGraphBuilder {
           i += 1
         }
         _sources = sources
+
+        // at the very end, check for deferred if-blocks
+        if (_sources.isEmpty && expIfTops.nonEmpty) {
+          val xs = expIfTops
+          expIfTops = Nil
+          xs.reverse.foreach { expTop =>
+            expandIfCases(expTop)
+          }
+          _sources = sources
+        }
+
       } while (_sources.nonEmpty)
       val ugenGraph = build(controlProxies)
-      if (expIfTops.nonEmpty) expIfTops.reverse.foreach { expTop =>
-        expandIfCases(expTop) // _children ::= impl.build(i.branch)
-      }
 
       ResultImpl(id = childId, graph = ugenGraph, links = _links.reverse, children = _children.reverse)
     }
@@ -260,21 +267,37 @@ object NestedUGenGraphBuilder {
     private[this] var expIfTops = List.empty[ExpIfTop]
 
     def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase = {
+      // create a new ExpIfCase
       val res = c match {
         case i: IfThenLike[Any] =>
-          val expTop = new ExpIfTop(i.dur)
+          val expTop = new ExpIfTop(lagTime = i.dur, selBranchId = outer.allocId())
           expIfTops ::= expTop
-          new ExpIfCase(expTop, predMask = 0, branchIdx = 0)
+          new ExpIfCase(expTop, peer = i, predMask = 0, branchIdx = 0)
 
         case e: ElseIfThen[Any] =>
           val expPar = e.pred.visit(this)
           val expTop = expPar.top
-          new ExpIfCase(expTop, predMask = expPar.predMask | (1 << expPar.branchIdx), branchIdx = expTop.branchCount)
+          new ExpIfCase(expTop, peer = e,
+            predMask = expPar.predMask | (1 << expPar.branchIdx), branchIdx = expTop.branchCount)
       }
+
+      // register it with the top
       val top = res.top
       top.branchCount += 1
       require(top.branchCount < 24, s"If -- number of branches cannot be >= 24")
       top.branches ::= res
+
+      // make sure the condition is zero or one
+      val condBin = forceBinary(c.cond)
+      top.condAcc = if (res.branchIdx == 0) {
+        condBin
+      } else {
+        // then "bit-shift" it.
+        val condShift = condBin << res.branchIdx
+        // then collect the bits in a "bit-field"
+        top.condAcc | condShift
+      }
+
       res
     }
 
@@ -292,13 +315,13 @@ object NestedUGenGraphBuilder {
 //      expIfMap += c -> child
 //    }
 
-    // returns top
-    @tailrec
-    private def getIfThen(c: IfOrElseIfThen[Any]): IfThenLike[Any] = c match {
-      case top: IfThenLike[Any] => top
-      case bot: ElseIfThen[Any] => getIfThen(bot.pred)
-    }
-
+//    // returns top
+//    @tailrec
+//    private def getIfThen(c: IfOrElseIfThen[Any]): IfThenLike[Any] = c match {
+//      case top: IfThenLike[Any] => top
+//      case bot: ElseIfThen[Any] => getIfThen(bot.pred)
+//    }
+//
 //    def expandElseIfCase(c: ElseIfThen[Any]): Unit = {
 //      val (top, _branchIdx) = getIfThen(c)
 //      val topChild    = _incomplete(top)
@@ -308,38 +331,6 @@ object NestedUGenGraphBuilder {
 //    }
 
     private def expandIfCases(expTop: ExpIfTop): Unit = {
-      ???
-    }
-
-    final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
-      val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
-      val selBranchId   = outer.allocId()   // branch selection / trigger signal will be written here
-      val lastBranchIdx = cases.size - 1
-
-      // ----
-
-      // calculate the accumulated conditions signal.
-      // this is a bit-mask of all cases, e.g. bit 0
-      // is high if the first `if` holds, bit 1 is
-      // high if the first `else if` holds, etc.
-      // a branch is active if its bit is high and
-      // all lower bits are low.
-      val condAcc = ((0: GE) /: cases.zipWithIndex) {
-        case (condAcc0, (c, branchIdx)) =>
-          // make sure the condition is zero or one
-          val condBin = forceBinary(c.cond)
-          if (branchIdx == 0) {
-            condBin
-          } else {
-            // then "bit-shift" it.
-            val condShift = condBin << branchIdx
-            // then collect the bits in a "bit-field"
-            condAcc0 | condShift
-          }
-      }
-
-      // ----
-
       // This is very elegant: The following elements
       // are side-effect free and will thus be removed
       // from the UGen graph, _unless_ a child is asking
@@ -362,8 +353,7 @@ object NestedUGenGraphBuilder {
       //   signal instead. we send the delayed `condAcc` to
       //   the bus, and each branch then compares that to its
       //   own branch index.
-
-      val _hasLag = lagTime != Constant.C0
+      import expTop.{hasLag => _hasLag, _}
 
       // Note: Delay1 does not initialize its state with zero,
       // therefore we have to add a zero frequency impulse.
@@ -392,6 +382,11 @@ object NestedUGenGraphBuilder {
       } else {
         (condChange, condAcc)
       }
+
+      // XXX TODO --- should we use different keys, or
+      // is this safe because we'll encounter all the
+      // corresponding `ThisBranch` instances right here
+      // before leaving the method?
       sourceMap += "sel-branch" -> selBranchSig.expand
 
       // ----
@@ -404,55 +399,183 @@ object NestedUGenGraphBuilder {
       // not contribute to the higher channels.
       // We can add the other behaviour later.
 
-      val (numChannels, children1) = ((0, _children) /: cases.zipWithIndex) {
-        case ((numCh0, children0), (c, branchIdx)) =>
-          import ugen._
-          // the branch condition is met when the fields masked up to here equal the shifted single condition
-          val condMask = if (branchIdx == lastBranchIdx) condAccT else condAccT & ((1 << (branchIdx + 1)) - 1)
-          val condEq = condMask sig_== (1 << branchIdx)
+      val lastBranchIdx     = branchCount - 1
+      lazy val resultLinkId = outer.allocId()   // summed branch audio output will be written here
 
-          val childId = outer.allocId()
-          val nodeCtl = pauseNodeCtlName(childId)
-          // condEq.poll(4, s"gate $branchIdx")
-          Pause.kr(gate = condEq, node = nodeCtl.ir)
-          val resultCtl = linkCtlName(resultLinkId)
-          val graphB = SynthGraph {
+      branches.foreach { c =>
+        import ugen._
+        // the branch condition is met when the fields masked up to here equal the shifted single condition
+        val condMask  = if (c.branchIdx == lastBranchIdx) condAccT else condAccT & c.thisMask
+        val condEq    = if (c.branchIdx == 0)             condMask else condMask sig_== (1 << c.branchIdx)
+
+        val childId = outer.allocId()
+        val nodeCtl = pauseNodeCtlName(childId)
+        // condEq.poll(4, s"gate $branchIdx")
+        Pause.kr(gate = condEq, node = nodeCtl.ir)
+        val resultCtl = linkCtlName(resultLinkId)
+
+        val graphBranch = if (!c.resultUsed) c.peer.branch else {
+          val e = c.peer.asInstanceOf[ElseIfThen[GE]] // XXX TODO --- not pretty the cast
+          val graphTail = SynthGraph {
             val resultBus   = resultCtl.ir
             val resultRate  = audio // XXX TODO --- how to get rate?
-            Out(resultRate, resultBus, c.res)
+            Out(resultRate, resultBus, e.res)
           }
-          // now call `UGenGraph.use()` with a child builder, and expand
-          // both `c.branch` and `graphB`.
-          val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
-            controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
-          val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
-            branchIdx = branchIdx, hasLag = _hasLag,
-            parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
-          val (childChans, childRes) = child.run {
-            val res     = child.buildInner(graphC)
-            val chans   = c.res match {
-              case i: IfGEImpl =>
-                // XXX TODO --- work around for the time where we
-                // do want to calculate the number of channels
-                // and store the result-link eagerly
-                i.expandAny match {
-                  case u: UGenInLike  => u.outputs.size
-                  case l: Link        => l.numChannels
-                }
-              case other =>
-                val sig = other.expand
-                sig.outputs.size
-            }
-            (chans, res)
-          }
-          (math.max(numCh0, childChans), childRes :: children0)
-      }
+          val graphHead = e.branch
+          graphHead.copy(sources = graphHead.sources ++ graphTail.sources,
+            controlProxies = graphHead.controlProxies ++ graphTail.controlProxies)
+        }
 
-      val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
-      _children   = children1
-      _links    ::= linkRes
-      linkRes
+        // now call `UGenGraph.use()` with a child builder, and expand `graphBranch`
+        val child   = new InnerImpl(childId = childId, thisExpIfCase = Some(c),
+          parent = builder, name = s"inner{if $resultLinkId case ${c.branchIdx}")
+        val childRes = child.build(graphBranch)
+        _children ::= childRes
+      }
     }
+
+//    final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
+//      val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
+//      val selBranchId   = outer.allocId()   // branch selection / trigger signal will be written here
+//      val lastBranchIdx = cases.size - 1
+//
+//      // ----
+//
+//      // calculate the accumulated conditions signal.
+//      // this is a bit-mask of all cases, e.g. bit 0
+//      // is high if the first `if` holds, bit 1 is
+//      // high if the first `else if` holds, etc.
+//      // a branch is active if its bit is high and
+//      // all lower bits are low.
+//      val condAcc = ((0: GE) /: cases.zipWithIndex) {
+//        case (condAcc0, (c, branchIdx)) =>
+//          // make sure the condition is zero or one
+//          val condBin = forceBinary(c.cond)
+//          if (branchIdx == 0) {
+//            condBin
+//          } else {
+//            // then "bit-shift" it.
+//            val condShift = condBin << branchIdx
+//            // then collect the bits in a "bit-field"
+//            condAcc0 | condShift
+//          }
+//      }
+//
+//      // ----
+//
+//      // This is very elegant: The following elements
+//      // are side-effect free and will thus be removed
+//      // from the UGen graph, _unless_ a child is asking
+//      // for this through `tryRefer`, creating the
+//      // link on demand. We must store in the source-map
+//      // _before_ we create the children.
+//
+//      // the signal written to the branch-selector bus
+//      // depends on whether we use `If` or `IfLag`.
+//      //
+//      // - in the former case, each branch sees the same
+//      //   trigger signal that is an impulse indicating the
+//      //   branch has changed. since the branch is only
+//      //   resumed when it is active, each branch can use
+//      //   that signal directly without any risk of confusion.
+//      // - in the latter case, each branch will have a
+//      //   "release" phase in which already a different branch
+//      //   condition holds. in order to make it possible to
+//      //   react to that release, we have to generate a gate
+//      //   signal instead. we send the delayed `condAcc` to
+//      //   the bus, and each branch then compares that to its
+//      //   own branch index.
+//
+//      val _hasLag = lagTime != Constant.C0
+//
+//      // Note: Delay1 does not initialize its state with zero,
+//      // therefore we have to add a zero frequency impulse.
+//      val condChange = (Delay1.kr(condAcc) sig_!= condAcc) + Impulse.kr(0)
+//
+//      val (selBranchSig, condAccT) = if (_hasLag) {
+//        import ugen._
+//        // freeze lag time at scalar rate, and ensure it is at
+//        // least `ControlDur`.
+//        val lagTimeI = lagTime.rate match {
+//          case `scalar` => lagTime
+//          case _        => DC.kr(lagTime)
+//        }
+//        val lagTimeM    = lagTimeI.max(ControlDur.ir)
+//
+//        val condChDly   = TDelay    .kr(condChange, lagTimeM  )
+//        val condChHold  = SetResetFF.kr(condChange, condChDly )
+//        val heldAcc     = Latch     .kr(condAcc   , condChHold)
+//
+//        // DelayN starts with zeroed buffer; we simply add the
+//        // latched un-delayed beginning during the buffer-fill-up.
+//        val heldDly0    = DelayN.kr(heldAcc, lagTimeM, lagTimeM)
+//        val heldDly     = heldDly0 + heldAcc * (heldDly0 sig_== 0)
+//        (heldAcc, heldDly)
+//
+//      } else {
+//        (condChange, condAcc)
+//      }
+//      sourceMap += "sel-branch" -> selBranchSig.expand
+//
+//      // ----
+//
+//      // numChannels: Will be maximum across all branches.
+//      // Note that branches with a smaller number
+//      // of channels do not "wrap-extend" their
+//      // signal as would be the case normally in
+//      // ScalaCollider. Instead, they simply do
+//      // not contribute to the higher channels.
+//      // We can add the other behaviour later.
+//
+//      val (numChannels, children1) = ((0, _children) /: cases.zipWithIndex) {
+//        case ((numCh0, children0), (c, branchIdx)) =>
+//          import ugen._
+//          // the branch condition is met when the fields masked up to here equal the shifted single condition
+//          val condMask = if (branchIdx == lastBranchIdx) condAccT else condAccT & ((1 << (branchIdx + 1)) - 1)
+//          val condEq = condMask sig_== (1 << branchIdx)
+//
+//          val childId = outer.allocId()
+//          val nodeCtl = pauseNodeCtlName(childId)
+//          // condEq.poll(4, s"gate $branchIdx")
+//          Pause.kr(gate = condEq, node = nodeCtl.ir)
+//          val resultCtl = linkCtlName(resultLinkId)
+//          val graphB = SynthGraph {
+//            val resultBus   = resultCtl.ir
+//            val resultRate  = audio // XXX TODO --- how to get rate?
+//            Out(resultRate, resultBus, c.res)
+//          }
+//          // now call `UGenGraph.use()` with a child builder, and expand
+//          // both `c.branch` and `graphB`.
+//          val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
+//            controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
+//          val child   =
+//            new InnerImpl(childId = childId, thisExpIfCase = ...
+//              parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
+//          val (childChans, childRes) = child.run {
+//            val res     = child.buildInner(graphC)
+//            val chans   = c.res match {
+//              case i: IfGEImpl =>
+//                // XXX TODO --- work around for the time where we
+//                // do want to calculate the number of channels
+//                // and store the result-link eagerly
+//                i.expandAny match {
+//                  case u: UGenInLike  => u.outputs.size
+//                  case l: Link        => l.numChannels
+//                }
+//              case other =>
+//                val sig = other.expand
+//                sig.outputs.size
+//            }
+//            (chans, res)
+//          }
+//          (math.max(numCh0, childChans), childRes :: children0)
+//      }
+//
+//      val linkRes = Link(id = resultLinkId, rate = audio, numChannels = numChannels)  // XXX TODO --- how to get rate?
+//      _children   = children1
+//      _links    ::= linkRes
+//      linkRes
+//    }
   }
 
   private def smartRef(ref: AnyRef): String = {
@@ -470,8 +593,8 @@ object NestedUGenGraphBuilder {
     opt.getOrElse(ref.hashCode.toHexString)
   }
 
-  private final class InnerImpl(val childId: Int, val selectedBranchId: Int, val branchIdx: Int,
-                                val hasLag: Boolean, val parent: Impl, name: String)
+  private final class InnerImpl(val childId: Int, val thisExpIfCase: Option[ExpIfCase],
+                                val parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -505,13 +628,10 @@ object NestedUGenGraphBuilder {
 
     def outer: OuterImpl  = this
     def parent: Impl      = this
+    def thisExpIfCase     = None: Option[ExpIfCase]
 
     def childId           = -1
-    def selectedBranchId  = -1
-    def branchIdx         = -1
-    def hasLag            = false
 
-    //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
 
     private[this] var idCount = 0
@@ -551,11 +671,11 @@ object NestedUGenGraphBuilder {
   }
 }
 trait NestedUGenGraphBuilder extends BasicUGenGraphBuilder {
-  import NestedUGenGraphBuilder.{ExpIfCase, Link}
+  import NestedUGenGraphBuilder.ExpIfCase
 
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
-  def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link
+//  def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link
 
   /** Returns gate that is open when this if branch is selected. */
   def thisBranch: GE
