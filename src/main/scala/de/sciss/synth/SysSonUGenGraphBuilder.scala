@@ -358,9 +358,19 @@ object SysSonUGenGraphBuilder {
             parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
           val (childChans, childRes) = child.run {
             val res     = child.buildInner(graphC)
-            println("WARNING: TODO")
-            // val sig     = c.res.expand
-            val chans   = 1 // sig.outputs.size
+            val chans   = c.res match {
+              case i: IfGEImpl =>
+                // XXX TODO --- work around for the time where we
+                // do want to calculate the number of channels
+                // and store the result-link eagerly
+                i.expandAny match {
+                  case u: UGenInLike  => u.outputs.size
+                  case l: Link        => l.numChannels
+                }
+              case other =>
+                val sig = other.expand
+                sig.outputs.size
+            }
             (chans, res)
           }
           (math.max(numCh0, childChans), childRes :: children0)

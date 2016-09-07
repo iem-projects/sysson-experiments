@@ -23,22 +23,22 @@ object ScenarioNested extends App {
 
   If.monolithic = false
 
-  lazy val sg0 = SynthGraph {
+  lazy val sg = SynthGraph {
     val amp : GE = "amp" .kr(0.2)
     val freq: GE = LFTri.kr(1.0 / 20, iphase = 3).linexp(-1, 1, 100, 1000)
 
-    val res0: GE = IfLag (freq > 200, 0.5) Then {
+    val res0: GE = IfLag (freq > 100, 0.5) Then {
       val gate0 = ThisBranch()
-      val res1: GE = IfLag (freq > 500, 0.1) Then {
-        val gate  = ThisBranch()
-        val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
-        val freq1 = Gate.kr(freq, gate)
-        SinOsc.ar(freq1) * 0.2 * env
-      } Else {
+      val res1: GE = IfLag (freq > 250, 0.1) Then {
         val gate  = ThisBranch()
         val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
         val freq1 = Gate.kr(freq, gate)
         Saw.ar(freq1) * 0.2 * env
+      } Else {
+        val gate  = ThisBranch()
+        val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
+        val freq1 = Gate.kr(freq, gate)
+        SinOsc.ar(freq1) * 0.2 * env
       }
       // gate.poll(10, "sine-gate")
       //      val env   = Sweep.ar(gate, 1.0/2).min(1)
@@ -56,7 +56,7 @@ object ScenarioNested extends App {
     Out.ar(0, Pan2.ar(res0 * amp))
   }
 
-  lazy val sg = SynthGraph {
+  lazy val sg1 = SynthGraph {
     val freq: GE = Line.kr(0, 1000, 20) // LFTri.kr(1.0 / 20, iphase = 3).linexp(-1, 1, 100, 1000)
 
     val res0: GE = If (freq > 333) Then {
