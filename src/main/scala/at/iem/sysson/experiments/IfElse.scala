@@ -66,24 +66,33 @@ import scala.language.implicitConversions
 object If {
   var monolithic: Boolean = true
 
-  def apply(cond: GE): IfBuilder =
+  def apply(cond: GE): IfBuilderT =
     if (If.monolithic) IfMono(cond = cond, lagTime = Constant.C0)
     else               IfMod (cond = cond, lagTime = Constant.C0)
 }
 
 object IfLag {
-  def apply(cond: GE, dur: GE): IfBuilder =
+  def apply(cond: GE, dur: GE): IfBuilderT =
     if (If.monolithic) IfMono(cond = cond, lagTime = dur)
     else               IfMod (cond = cond, lagTime = dur)
 }
 
-trait IfBuilder {
-  def Then [A](branch: => A): If[A]
+trait IfBuilderT {
+  def Then [A](branch: => A): IfT[A]
 }
 
-trait If[A] {
+final case class IfBuilder() {
+  def Then [A](branch: => A): If[A] = ???
+}
+
+trait IfT[A] {
   def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
-  def ElseIf (cond: GE): ElseIfBuilder[A]
+  def ElseIf (cond: GE): ElseIfBuilderT[A]
+}
+
+final case class If[A]() {
+  def Else [B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out = ???
+  def ElseIf (cond: GE): ElseIfBuilder[A] = ???
 }
 
 object ElseBuilder {
@@ -101,8 +110,12 @@ object ElseBuilder {
   }
 }
 
-trait ElseIfBuilder[A] {
-  def Then [B >: A](branch: => B): If[B]
+trait ElseIfBuilderT[A] {
+  def Then [B >: A](branch: => B): IfT[B]
+}
+
+final case class ElseIfBuilder[A]() {
+  def Then [B >: A](branch: => B): If[B] = ???
 }
 
 final case class ThisBranch() extends GE.Lazy with ControlRated {
