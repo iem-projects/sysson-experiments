@@ -72,7 +72,7 @@ object ScenarioMod {
       Out.ar(0, Pan2.ar(res0 * amp))
     }
 
-    val ug = SysSonUGenGraphBuilder.build(sg2)
+    val ug = NestedUGenGraphBuilder.build(sg2)
 
 //    val sd = SynthDef("test", ug)
 
@@ -95,7 +95,7 @@ object ScenarioMod {
     }
   }
 
-  def print(name: String, level: Int, res: SysSonUGenGraphBuilder.Result): Unit = {
+  def print(name: String, level: Int, res: NestedUGenGraphBuilder.Result): Unit = {
     import at.iem.scalacollider.ScalaColliderDOT
     val dotC        = ScalaColliderDOT.Config()
     dotC.input      = res /* sd */.graph
@@ -109,7 +109,7 @@ object ScenarioMod {
     }
   }
 
-  def play(res0: SysSonUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
+  def play(res0: NestedUGenGraphBuilder.Result, args: List[ControlSet]): Node = {
     val s     = Server.default
     var defs  = List.empty[SynthDef]
     var defSz = 0   // used to create unique def names
@@ -117,7 +117,7 @@ object ScenarioMod {
     var ctl   = args.reverse  // init
     var buses = List.empty[Bus]
 
-    def loop(child: SysSonUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
+    def loop(child: NestedUGenGraphBuilder.Result, parent: Group, addAction: AddAction): Node = {
       val name        = s"test-$defSz"
       val sd          = SynthDef(name, child.graph)
       defs          ::= sd
@@ -134,7 +134,7 @@ object ScenarioMod {
 
       child.children.foreach { cc =>
         val ccn = loop(cc, group, addToTail)
-        if (cc.id >= 0) ctl ::= SysSonUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
+        if (cc.id >= 0) ctl ::= NestedUGenGraphBuilder.pauseNodeCtlName(cc.id) -> ccn.id
       }
 
       child.links.foreach { link =>
@@ -144,7 +144,7 @@ object ScenarioMod {
           case other      => throw new IllegalArgumentException(s"Unsupported link rate $other")
         }
         buses ::= bus
-        ctl   ::= SysSonUGenGraphBuilder.linkCtlName(link.id) -> bus.index
+        ctl   ::= NestedUGenGraphBuilder.linkCtlName(link.id) -> bus.index
       }
 
       node

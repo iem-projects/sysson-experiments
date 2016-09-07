@@ -74,7 +74,7 @@ object ScenarioNested extends App {
     Out.ar(0, Pan2.ar(res0 * 0.2))
   }
 
-  val ug = SysSonUGenGraphBuilder.build(sg)
+  val ug = NestedUGenGraphBuilder.build(sg)
 
   if (CREATE_PDF) ScenarioMod.print("top", 0, ug)
 

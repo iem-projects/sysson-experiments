@@ -1,5 +1,5 @@
 /*
- *  SysSonUGenGraphBuilder.scala
+ *  NestedUGenGraphBuilder.scala
  *  (SysSon-Experiments)
  *
  *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
@@ -17,14 +17,21 @@ package de.sciss.synth
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, If, IfThenLike, Impulse, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseIfThen, If, IfOrElseIfThen, IfThenLike, Impulse, In, Out, UnaryOpUGen}
 
-import scala.annotation.elidable
+import scala.annotation.{elidable, tailrec}
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
-object SysSonUGenGraphBuilder {
+object NestedUGenGraphBuilder {
   final case class Link(id: Int, rate: Rate, numChannels: Int) {
     require(rate == control || rate == audio, s"Unsupported link rate $rate")
+  }
+
+  final class ExpIfCase
+
+  def get: NestedUGenGraphBuilder = UGenGraph.builder match {
+    case b: NestedUGenGraphBuilder => b
+    case _ => sys.error("Cannot expand modular If-block outside of NestedUGenGraphBuilder")
   }
 
   trait Result {
@@ -100,7 +107,7 @@ object SysSonUGenGraphBuilder {
     - handle controls over boundaries
 
    */
-  private trait Impl extends SysSonUGenGraphBuilder with SynthGraph.Builder {
+  private trait Impl extends NestedUGenGraphBuilder with SynthGraph.Builder {
     builder =>
 
     // ---- abstract ----
@@ -136,7 +143,7 @@ object SysSonUGenGraphBuilder {
     def thisBranch: GE =
       if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
       else {
-        val in0       = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
+        val in0 = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
         if (hasLag) {
           // we don't know if we are the last branch, so simply skip that optimization
           val condMask  = /* if (branchIdx == lastBranchIdx) in0 else */ in0 & ((1 << (branchIdx + 1)) - 1)
@@ -179,6 +186,10 @@ object SysSonUGenGraphBuilder {
         _sources = sources
       } while (_sources.nonEmpty)
       val ugenGraph = build(controlProxies)
+      _incomplete.foreach { case (i, impl) =>
+        _children ::= impl.build(i.branch)
+      }
+
       ResultImpl(id = childId, graph = ugenGraph, links = _links.reverse, children = _children.reverse)
     }
 
@@ -238,17 +249,47 @@ object SysSonUGenGraphBuilder {
 
     // ---- UGenGraph.Builder ----
 
-    private[this] var _incomplete = List.empty[InnerImpl]
+    private final class IfExpansion {
 
-    def expandIfCase(c: IfThenLike[Any]): Unit = {
-      val childId     = outer.allocId()
+    }
+
+    private[this] var _incomplete = Map.empty[IfOrElseIfThen[Any], InnerImpl]
+
+    def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase = {
+      ???
+    }
+
+    private def expandIfCase(c: IfThenLike[Any]): Unit = {
       val selBranchId = outer.allocId()   // branch selection / trigger signal will be written here
       val _hasLag     = c.dur != Constant.C0
-      val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
-        branchIdx = branchIdx, hasLag = _hasLag,
-        parent = builder, name = s"inner{if $selBranchId case $branchIdx}")
-      _incomplete ::= child
+      mkIfCaseChild(c, _branchIdx = 0, selBranchId = selBranchId, _hasLag = _hasLag)
     }
+
+    private def mkIfCaseChild(c: IfOrElseIfThen[Any], _branchIdx: Int, selBranchId: Int, _hasLag: Boolean): Unit = {
+      val childId     = outer.allocId()
+      val child       = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
+        branchIdx = _branchIdx, hasLag = _hasLag,
+        parent = builder, name = s"inner{if $selBranchId}")
+      _incomplete += c -> child
+    }
+
+    // returns top and branch-idx
+    private def getIfThen(e: ElseIfThen[Any]): (IfThenLike[Any], Int) = {
+      @tailrec
+      def loop(c: IfOrElseIfThen[Any], branchIdx: Int): (IfThenLike[Any], Int) = c match {
+        case top: IfThenLike[Any] => (top, branchIdx)
+        case bot: ElseIfThen[Any] => loop(bot.pred, branchIdx + 1)
+      }
+      loop(e.pred, 1)
+    }
+
+//    def expandElseIfCase(c: ElseIfThen[Any]): Unit = {
+//      val (top, _branchIdx) = getIfThen(c)
+//      val topChild    = _incomplete(top)
+//      val selBranchId = topChild.selectedBranchId
+//      val _hasLag     = topChild.hasLag
+//      mkIfCaseChild(c, _branchIdx = _branchIdx, selBranchId = selBranchId, _hasLag = _hasLag)
+//    }
 
     final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
       val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
@@ -485,12 +526,12 @@ object SysSonUGenGraphBuilder {
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
 
   def enterIfCase(cond: GE): Unit = UGenGraph.builder match {
-    case sysson: SysSonUGenGraphBuilder => sysson.enterIfCase(cond)
+    case nb: NestedUGenGraphBuilder => nb.enterIfCase(cond)
     case _ => // ignore
   }
 }
-trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
-  import SysSonUGenGraphBuilder.Link
+trait NestedUGenGraphBuilder extends BasicUGenGraphBuilder {
+  import NestedUGenGraphBuilder.{ExpIfCase, Link}
 
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
@@ -504,5 +545,5 @@ trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
 
   //////////////////////////////////
 
-  def expandIfCase(c: IfThenLike[Any]): Unit
+  def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase
 }

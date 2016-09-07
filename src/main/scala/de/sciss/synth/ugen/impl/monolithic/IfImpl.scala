@@ -16,7 +16,7 @@ package de.sciss.synth.ugen.impl.monolithic
 
 import at.iem.sysson.experiments.{ElseBuilderOLD, ElseIfBuilderOLD, IfBuilderOLD, IfOLD}
 import de.sciss.synth.ugen.{Constant, UnaryOpUGen}
-import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilderOLD, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 
@@ -97,7 +97,7 @@ final case class IfGEImpl(cases: List[IfCase[GE]], lagTime: GE) extends GE.Lazy 
         case Constant.C0  => c.cond
         case cPrev        => cPrev | c.cond
       }
-      SysSonUGenGraphBuilder.enterIfCase(condNow)
+      SysSonUGenGraphBuilderOLD.enterIfCase(condNow)
 
       val bg = c.branch
       bg.sources.foreach { lz =>

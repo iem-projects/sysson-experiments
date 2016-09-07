@@ -16,7 +16,7 @@ package de.sciss.synth.ugen.impl.modular
 
 import at.iem.sysson.experiments.{ElseBuilderOLD, ElseIfBuilderOLD, IfBuilderOLD, IfOLD}
 import de.sciss.synth.UGenGraph.Builder
-import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
+import de.sciss.synth.{GE, Lazy, MaybeRate, NestedUGenGraphBuilder$, SynthGraph, SysSonUGenGraphBuilderOLD, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 
@@ -107,7 +107,7 @@ final case class IfGEImpl(cases: List[IfCase[GE]], lagTime: GE) extends GE with 
 
   // the `expandIfCases` will store the reference!
   private[synth] def force(b: Builder): Unit = UGenGraph.builder match {
-    case sysson: SysSonUGenGraphBuilder =>
+    case sysson: SysSonUGenGraphBuilderOLD =>
       sysson.visit(ref, sysson.expandIfCases(cases, lagTime))
 
     case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
