@@ -28,15 +28,22 @@ object ScenarioLag extends App {
     val freq: GE = "freq".kr
 
     val res0: GE = IfLag (freq > 1000, 0.5) Then {
-      ThisBranch().poll(10, "sine-gate")
-      val env = Sweep.ar(ThisBranch(), 1.0/2).min(1)
-      SinOsc.ar(freq) * 0.2 * env
+      val gate  = ThisBranch()
+      gate.poll(10, "sine-gate")
+      val env   = Sweep.ar(gate, 1.0/2).min(1)
+      val freq1 = Gate.kr(freq, gate)
+      SinOsc.ar(freq1) * 0.2 * env
     } ElseIf (freq > 100) Then {
-//      freq.poll(ThisBranch(), "branch 2")
-      val env = Sweep.ar(ThisBranch(), 1.0/1).min(1)
-      Dust.ar(freq) * env
+      val gate  = ThisBranch()
+      gate.poll(10, "dust-gate")
+//      freq.poll(gate, "branch 2")
+      val env   = Sweep.ar(gate, 1.0/1).min(1)
+      val freq1 = Gate.kr(freq, gate)
+      Dust.ar(freq1) * env
     } Else {
-      val env = Sweep.ar(ThisBranch(), 1.0/2).min(1)
+      val gate  = ThisBranch()
+      gate.poll(10, "noise-gate")
+      val env = Sweep.ar(gate, 1.0/2).min(1)
       WhiteNoise.ar(0.1) * env
     }
 
