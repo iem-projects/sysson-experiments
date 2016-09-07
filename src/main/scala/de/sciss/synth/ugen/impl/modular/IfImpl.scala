@@ -16,7 +16,7 @@ package de.sciss.synth.ugen.impl.modular
 
 import at.iem.sysson.experiments.{ElseBuilderOLD, ElseIfBuilderOLD, IfBuilderOLD, IfOLD}
 import de.sciss.synth.UGenGraph.Builder
-import de.sciss.synth.{GE, Lazy, MaybeRate, NestedUGenGraphBuilder$, SynthGraph, SysSonUGenGraphBuilderOLD, UGenGraph, UGenInLike, UndefinedRate}
+import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilderOLD, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
 

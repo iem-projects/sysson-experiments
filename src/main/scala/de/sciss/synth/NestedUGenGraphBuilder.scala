@@ -27,7 +27,15 @@ object NestedUGenGraphBuilder {
     require(rate == control || rate == audio, s"Unsupported link rate $rate")
   }
 
-  final class ExpIfCase
+  final class ExpIfTop(val lagTime: GE) {
+    val hasLag      = lagTime != Constant.C0
+    var branchCount = 0
+    var branches    = List.empty[ExpIfCase]
+  }
+
+  final class ExpIfCase(val top: ExpIfTop, val predMask: Int, val branchIdx: Int) {
+    var resultUsed = false
+  }
 
   def get: NestedUGenGraphBuilder = UGenGraph.builder match {
     case b: NestedUGenGraphBuilder => b
@@ -186,8 +194,8 @@ object NestedUGenGraphBuilder {
         _sources = sources
       } while (_sources.nonEmpty)
       val ugenGraph = build(controlProxies)
-      _incomplete.foreach { case (i, impl) =>
-        _children ::= impl.build(i.branch)
+      if (expIfTops.nonEmpty) expIfTops.reverse.foreach { expTop =>
+        expandIfCases(expTop) // _children ::= impl.build(i.branch)
       }
 
       ResultImpl(id = childId, graph = ugenGraph, links = _links.reverse, children = _children.reverse)
@@ -249,38 +257,46 @@ object NestedUGenGraphBuilder {
 
     // ---- UGenGraph.Builder ----
 
-    private final class IfExpansion {
-
-    }
-
-    private[this] var _incomplete = Map.empty[IfOrElseIfThen[Any], InnerImpl]
+    private[this] var expIfTops = List.empty[ExpIfTop]
 
     def expandIfCase(c: IfOrElseIfThen[Any]): ExpIfCase = {
-      ???
-    }
+      val res = c match {
+        case i: IfThenLike[Any] =>
+          val expTop = new ExpIfTop(i.dur)
+          expIfTops ::= expTop
+          new ExpIfCase(expTop, predMask = 0, branchIdx = 0)
 
-    private def expandIfCase(c: IfThenLike[Any]): Unit = {
-      val selBranchId = outer.allocId()   // branch selection / trigger signal will be written here
-      val _hasLag     = c.dur != Constant.C0
-      mkIfCaseChild(c, _branchIdx = 0, selBranchId = selBranchId, _hasLag = _hasLag)
-    }
-
-    private def mkIfCaseChild(c: IfOrElseIfThen[Any], _branchIdx: Int, selBranchId: Int, _hasLag: Boolean): Unit = {
-      val childId     = outer.allocId()
-      val child       = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
-        branchIdx = _branchIdx, hasLag = _hasLag,
-        parent = builder, name = s"inner{if $selBranchId}")
-      _incomplete += c -> child
-    }
-
-    // returns top and branch-idx
-    private def getIfThen(e: ElseIfThen[Any]): (IfThenLike[Any], Int) = {
-      @tailrec
-      def loop(c: IfOrElseIfThen[Any], branchIdx: Int): (IfThenLike[Any], Int) = c match {
-        case top: IfThenLike[Any] => (top, branchIdx)
-        case bot: ElseIfThen[Any] => loop(bot.pred, branchIdx + 1)
+        case e: ElseIfThen[Any] =>
+          val expPar = e.pred.visit(this)
+          val expTop = expPar.top
+          new ExpIfCase(expTop, predMask = expPar.predMask | (1 << expPar.branchIdx), branchIdx = expTop.branchCount)
       }
-      loop(e.pred, 1)
+      val top = res.top
+      top.branchCount += 1
+      require(top.branchCount < 24, s"If -- number of branches cannot be >= 24")
+      top.branches ::= res
+      res
+    }
+
+//    private def expandIfCase(c: IfThenLike[Any]): Unit = {
+//      val selBranchId = outer.allocId()   // branch selection / trigger signal will be written here
+//      val _hasLag     = c.dur != Constant.C0
+//      mkIfCaseChild(c, _branchIdx = 0, selBranchId = selBranchId, _hasLag = _hasLag)
+//    }
+//
+//    private def mkIfCaseChild(c: IfOrElseIfThen[Any], _branchIdx: Int, selBranchId: Int, _hasLag: Boolean): Unit = {
+//      val childId     = outer.allocId()
+//      val child       = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
+//        branchIdx = _branchIdx, hasLag = _hasLag,
+//        parent = builder, name = s"inner{if $selBranchId}")
+//      expIfMap += c -> child
+//    }
+
+    // returns top
+    @tailrec
+    private def getIfThen(c: IfOrElseIfThen[Any]): IfThenLike[Any] = c match {
+      case top: IfThenLike[Any] => top
+      case bot: ElseIfThen[Any] => getIfThen(bot.pred)
     }
 
 //    def expandElseIfCase(c: ElseIfThen[Any]): Unit = {
@@ -290,6 +306,10 @@ object NestedUGenGraphBuilder {
 //      val _hasLag     = topChild.hasLag
 //      mkIfCaseChild(c, _branchIdx = _branchIdx, selBranchId = selBranchId, _hasLag = _hasLag)
 //    }
+
+    private def expandIfCases(expTop: ExpIfTop): Unit = {
+      ???
+    }
 
     final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
       val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
