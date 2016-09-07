@@ -18,7 +18,7 @@ import at.iem.sysson.experiments.If
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, Impulse, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -60,12 +60,6 @@ object SysSonUGenGraphBuilder {
   def pauseNodeCtlName(id: Int): String =
     s"$$if$id" // e.g. first if block third branch is `$if0_2n`
 
-//  def pauseNodeCtlName(linkId: Int, caseId: Int): String =
-//    s"$$if${linkId}_${caseId}n"    // e.g. first if block third branch is `$if0_2n`
-//
-//  def pauseBusCtlName(linkId: Int, caseId: Int): String =
-//    s"$$if${linkId}_${caseId}b"
-
   // single control for setting the bus index
   def linkCtlName(id: Int): String =
     s"$$ln$id"
@@ -89,14 +83,21 @@ object SysSonUGenGraphBuilder {
 
   private def forceBinary(in: GE): GE = if (isBinary(in)) in else in sig_!= 0
 
+  private def expandLinkSink(link: Link): UGenInLike = {
+    val ctlName   = linkCtlName(link.id)
+    val ctl       = ctlName.ir    // link-bus
+    val in        = In(link.rate, bus = ctl, numChannels = link.numChannels)
+    val inExp = in.expand
+    // (link, inExp)
+    inExp
+  }
+
   private final case class ResultImpl(id: Int, graph: UGenGraph, links: List[Link],
                                       children: List[Result]) extends Result
 
   /*
     TODO:
 
-    - more efficient bundling of buses (e.g. one control per if block)
-    - create return signal
     - handle controls over boundaries
 
    */
@@ -117,6 +118,9 @@ object SysSonUGenGraphBuilder {
     /** Index of current branch or if-case in the current if-block. */
     def branchIdx: Int
 
+    /** Whether this child is an if-case with lag-time. */
+    def hasLag: Boolean
+
     // ---- impl ----
 
     protected final var _children = List.empty[Result]
@@ -127,29 +131,23 @@ object SysSonUGenGraphBuilder {
 
     override def toString = s"SynthGraph.Builder@${hashCode.toHexString}"
 
-    private[this] var enteredIfCase = Option.empty[GE]
-
     private def errorOutsideBranch(): Nothing =
       throw new UnsupportedOperationException("ThisBranch used outside of if-branch")
 
     def thisBranch: GE =
-      if (If.monolithic) enteredIfCase.getOrElse(errorOutsideBranch())
+      if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
       else {
-//        // the branch is selected if the "bit" for this
-//        // branch is set, and the bits for all lower branches
-//        // are clear. E.g. for the third branch: x & ((1 << 3) - 1) == (1 << 2)
-//        // I.e. x & 7 == 4
-//        val selBranchId = selectedBranchId
-//        if (selBranchId < 0) errorOutsideBranch()
-//        val selCtlName  = linkCtlName(selBranchId)
-//        val selBus      = selCtlName.ir
-//        val condCh      = In.kr(selBus)
-//        condCh
-        val in = parent.tryRefer("cond-change").getOrElse(errorOutsideBranch())
-        in
+        val in0       = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
+        if (hasLag) {
+          // we don't know if we are the last branch, so simply skip that optimization
+          val condMask  = /* if (branchIdx == lastBranchIdx) in0 else */ in0 & ((1 << (branchIdx + 1)) - 1)
+          condMask sig_== (1 << branchIdx)
+        } else {
+          in0
+        }
       }
 
-    def enterIfCase(cond: GE): Unit = if (If.monolithic) enteredIfCase = Some(cond)
+    def enterIfCase(cond: GE): Unit = if (If.monolithic) sourceMap += "if-case" -> cond
 
     final def buildInner(g0: SynthGraph): Result = {
       var _sources: Vec[Lazy] = g0.sources
@@ -162,14 +160,19 @@ object SysSonUGenGraphBuilder {
         while (i < sz) {
           val source = _sources(i)
           source.force(builder)
-          _sources(i) match {
+          // if we just expanded an if-block, we must now
+          // wrap the remaining sources in a new child, because
+          // only that way we can correctly establish a link
+          // between the if-block's return signal and its
+          // dependents.
+          source match {
             case _: IfGEImpl =>
               // XXX TODO --- what to do with the damn control proxies?
               val graphC  = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
               val child   = new InnerImpl(childId = -1, selectedBranchId = -1, branchIdx = -1,
-                parent = builder, name = "continue")
+                hasLag = false, parent = builder, name = "continue")
               _children ::= child.build(graphC)
-              i = sz    // "skip rest"
+              i = sz    // "skip rest" in the outer graph
             case _ =>
           }
           i += 1
@@ -198,15 +201,6 @@ object SysSonUGenGraphBuilder {
     // ---- internal ----
 
     private[this] var linkMap = Map.empty[AnyRef, Link]
-
-    private def expandLinkSink(link: Link): UGenInLike = {
-      val ctlName   = linkCtlName(link.id)
-      val ctl       = ctlName.ir    // link-bus
-      val in        = In(link.rate, bus = ctl, numChannels = link.numChannels)
-      val inExp = in.expand
-      // (link, inExp)
-      inExp
-    }
 
     final def tryRefer(ref: AnyRef): Option[UGenInLike] =
       sourceMap.get(ref).collect {
@@ -245,13 +239,19 @@ object SysSonUGenGraphBuilder {
 
     // ---- UGenGraph.Builder ----
 
-    final def expandIfCases(cases: List[IfCase[GE]]): Link = {
-      val resultLinkId  = outer.allocId()
-      val selBranchId   = outer.allocId()
+    final def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link = {
+      val resultLinkId  = outer.allocId()   // summed branch audio output will be written here
+      val selBranchId   = outer.allocId()   // branch selection / trigger signal will be written here
       val lastBranchIdx = cases.size - 1
 
-      // calculate the accumulated conditions signal,
-      // and pair the if-cases with their condition-GE
+      // ----
+
+      // calculate the accumulated conditions signal.
+      // this is a bit-mask of all cases, e.g. bit 0
+      // is high if the first `if` holds, bit 1 is
+      // high if the first `else if` holds, etc.
+      // a branch is active if its bit is high and
+      // all lower bits are low.
       val condAcc = ((0: GE) /: cases.zipWithIndex) {
         case (condAcc0, (c, branchIdx)) =>
           // make sure the condition is zero or one
@@ -266,13 +266,7 @@ object SysSonUGenGraphBuilder {
           }
       }
 
-      //      val linkSelBranch = Link(id = selBranchId, rate = control, numChannels = 1)
-      //      _links ::= linkSelBranch
-      //      val selCtlName  = linkCtlName(selBranchId)
-      //      val selBus      = selCtlName.ir
-      // println(s"cond-out-ctl $selCtlName")
-      // condAcc.poll(4, "cond-out")
-      // selBus .poll(4, "cond-out-bus")
+      // ----
 
       // This is very elegant: The following elements
       // are side-effect free and will thus be removed
@@ -280,10 +274,55 @@ object SysSonUGenGraphBuilder {
       // for this through `tryRefer`, creating the
       // link on demand. We must store in the source-map
       // _before_ we create the children.
-      // XXX TODO --- Delay1 has crappy init state semantics!!
-      val condChange = Delay1.kr(condAcc) sig_!= condAcc
-      sourceMap += "cond-change" -> condChange.expand
-      // Out.kr(bus = selBus, in = condChange)
+
+      // the signal written to the branch-selector bus
+      // depends on whether we use `If` or `IfLag`.
+      //
+      // - in the former case, each branch sees the same
+      //   trigger signal that is an impulse indicating the
+      //   branch has changed. since the branch is only
+      //   resumed when it is active, each branch can use
+      //   that signal directly without any risk of confusion.
+      // - in the latter case, each branch will have a
+      //   "release" phase in which already a different branch
+      //   condition holds. in order to make it possible to
+      //   react to that release, we have to generate a gate
+      //   signal instead. we send the delayed `condAcc` to
+      //   the bus, and each branch then compares that to its
+      //   own branch index.
+
+      val _hasLag = lagTime != Constant.C0
+
+      // Note: Delay1 does not initialize its state with zero,
+      // therefore we have to add a zero frequency impulse.
+      val condChange = (Delay1.kr(condAcc) sig_!= condAcc) + Impulse.kr(0)
+
+      val (selBranchSig, condAccT) = if (_hasLag) {
+        import ugen._
+        // freeze lag time at scalar rate, and ensure it is at
+        // least `ControlDur`.
+        val lagTimeI = lagTime.rate match {
+          case `scalar` => lagTime
+          case _        => DC.kr(lagTime)
+        }
+        val lagTimeM    = lagTimeI.max(ControlDur.ir)
+
+        val condChDly   = TDelay    .kr(condChange, lagTimeM  )
+        val condChHold  = SetResetFF.kr(condChange, condChDly )
+        val heldAcc     = Latch     .kr(condAcc   , condChHold)
+
+        // DelayN starts with zeroed buffer; we simply add the
+        // latched un-delayed beginning during the buffer-fill-up.
+        val heldDly0    = DelayN.kr(heldAcc, lagTimeM, lagTimeM)
+        val heldDly     = heldDly0 + heldAcc * (heldDly0 sig_== 0)
+        (heldAcc, heldDly)
+
+      } else {
+        (condChange, condAcc)
+      }
+      sourceMap += "sel-branch" -> selBranchSig.expand
+
+      // ----
 
       // numChannels: Will be maximum across all branches.
       // Note that branches with a smaller number
@@ -297,7 +336,7 @@ object SysSonUGenGraphBuilder {
         case ((numCh0, children0), (c, branchIdx)) =>
           import ugen._
           // the branch condition is met when the fields masked up to here equal the shifted single condition
-          val condMask = if (branchIdx == lastBranchIdx) condAcc else condAcc & ((1 << (branchIdx + 1)) - 1)
+          val condMask = if (branchIdx == lastBranchIdx) condAccT else condAccT & ((1 << (branchIdx + 1)) - 1)
           val condEq = condMask sig_== (1 << branchIdx)
 
           val childId = outer.allocId()
@@ -315,7 +354,8 @@ object SysSonUGenGraphBuilder {
           val graphC = c.branch.copy(sources = c.branch.sources ++ graphB.sources,
             controlProxies = c.branch.controlProxies ++ graphB.controlProxies)
           val child   = new InnerImpl(childId = childId, selectedBranchId = selBranchId,
-            branchIdx = branchIdx, parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
+            branchIdx = branchIdx, hasLag = _hasLag,
+            parent = builder, name = s"inner{if $resultLinkId case $branchIdx}")
           val (childChans, childRes) = child.run {
             val res     = child.buildInner(graphC)
             val sig     = c.res.expand
@@ -348,7 +388,7 @@ object SysSonUGenGraphBuilder {
   }
 
   private final class InnerImpl(val childId: Int, val selectedBranchId: Int, val branchIdx: Int,
-                                val parent: Impl, name: String)
+                                val hasLag: Boolean, val parent: Impl, name: String)
     extends Impl {
 
     def outer: OuterImpl = parent.outer
@@ -386,6 +426,7 @@ object SysSonUGenGraphBuilder {
     def childId           = -1
     def selectedBranchId  = -1
     def branchIdx         = -1
+    def hasLag            = false
 
     //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"
@@ -431,7 +472,7 @@ trait SysSonUGenGraphBuilder extends BasicUGenGraphBuilder {
 
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
-  def expandIfCases(cases: List[IfCase[GE]]): Link
+  def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link
 
   /** Returns gate that is open when this if branch is selected. */
   def thisBranch: GE

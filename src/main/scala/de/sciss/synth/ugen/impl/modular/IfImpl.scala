@@ -16,6 +16,7 @@ package de.sciss.synth.ugen.impl.modular
 
 import at.iem.sysson.experiments.{ElseBuilder, ElseIfBuilder, If, IfBuilder}
 import de.sciss.synth.UGenGraph.Builder
+import de.sciss.synth.ugen.Constant
 import de.sciss.synth.{GE, Lazy, MaybeRate, SynthGraph, SysSonUGenGraphBuilder, UGenGraph, UGenInLike, UndefinedRate}
 
 import scala.Predef.{any2stringadd => _, _}
@@ -99,7 +100,7 @@ final case class IfGEImpl(cases: List[IfCase[GE]]) extends GE with Lazy {
   // the `expandIfCases` will store the reference!
   private[synth] def force(b: Builder): Unit = UGenGraph.builder match {
     case sysson: SysSonUGenGraphBuilder =>
-      sysson.visit(ref, sysson.expandIfCases(cases))
+      sysson.visit(ref, sysson.expandIfCases(cases, Constant.C0))
 
     case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
   }
