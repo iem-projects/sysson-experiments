@@ -28,10 +28,11 @@ object ScenarioLag extends App {
     val freq: GE = "freq".kr
 
     val res0: GE = IfLag (freq > 1000, 0.5) Then {
+      ThisBranch().poll(10, "sine-gate")
       val env = Sweep.ar(ThisBranch(), 1.0/2).min(1)
       SinOsc.ar(freq) * 0.2 * env
     } ElseIf (freq > 100) Then {
-      freq.poll(ThisBranch(), "branch 2")
+//      freq.poll(ThisBranch(), "branch 2")
       val env = Sweep.ar(ThisBranch(), 1.0/1).min(1)
       Dust.ar(freq) * env
     } Else {
@@ -47,7 +48,7 @@ object ScenarioLag extends App {
   if (CREATE_PDF) ScenarioMod.print("top", 0, ug)
 
   Server.run { s =>
-    s.dumpOSC()
+//    s.dumpOSC()
     println("Should hear WhiteNoise.")
     val syn = ScenarioMod.play(ug, args = List("freq" -> 0))
     Thread.sleep(2000)
