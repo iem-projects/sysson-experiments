@@ -469,6 +469,7 @@ object NestedUGenGraphBuilder {
         // now call `UGenGraph.use()` with a child builder, and expand `graphBranch`
         val child   = new InnerImpl(childId = childId, thisExpIfCase = Some(c),
           parent = builder, name = s"inner{if $resultLinkId case ${c.branchIdx}")
+        println("BUILDING BRANCH")
         val childRes = child.build(graphBranch)
         _children ::= childRes
       }
