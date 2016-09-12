@@ -16,7 +16,7 @@ package de.sciss.synth
 
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, DC, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
 
 import scala.annotation.{elidable, tailrec}
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -31,7 +31,9 @@ object NestedUGenGraphBuilder {
     var branchCount = 0
     var branches    = List.empty[ExpIfCase]
     var condAcc: GE = Constant.C0
-    var numChannels = 0   // of the result signal
+
+    var resultLinkId  = -1  // summed branch audio output will be written here
+    var numChannels   = 0   // of the result signal
   }
 
   final class ExpIfCase(val peer: Then[Any], val pred: Option[ExpIfCase], val top: ExpIfTop,
@@ -196,9 +198,17 @@ object NestedUGenGraphBuilder {
         if (_sources.isEmpty && expIfTops.nonEmpty) {
           val xs = expIfTops
           expIfTops = Nil
+          // this is again tricky. The "remaining-after-if-block" children
+          // have already been created at this point, but they must be
+          // inserted after the if-branches themselves. Since `_children` is
+          // reverse-sorted, we "clear" it here, then prepend the saved
+          // children after the `expandIfCases` calls.
+          val succ  = _children
+          _children = Nil
           xs.reverse.foreach { expTop =>
             expandIfCases(expTop)
           }
+          _children = succ ::: _children
           _sources = sources
         }
 
@@ -257,11 +267,11 @@ object NestedUGenGraphBuilder {
           })
           expandLinkSink(link)
 
-        case link: Link =>
-          ??? // XXX TODO --- this case should be removed, it is probably not used any longer
-
-          // if reference found
-          expandLinkSink(link)
+//        case link: Link =>
+//          ... // --- this case should be removed, it is probably not used any longer
+//
+//          // if reference found
+//          expandLinkSink(link)
 
         case expIfCase: ExpIfCase =>
           // mark this case and all its predecessors as result-used.
@@ -273,7 +283,16 @@ object NestedUGenGraphBuilder {
             }
           }
           loop(expIfCase)
-          DC.ar(0)
+
+          val expTop = expIfCase.top
+          import expTop._
+          if (resultLinkId < 0) resultLinkId = outer.allocId()
+          println("WARNING: expTop.numChannels NOT YET CALCULATED")
+          numChannels = 1
+          val link = Link(id = resultLinkId, rate = audio, numChannels = numChannels)
+          linkMap += ref -> link
+
+          expandLinkSink(link)
       }
 
     // ---- UGenGraph.Builder ----
@@ -421,8 +440,7 @@ object NestedUGenGraphBuilder {
       // not contribute to the higher channels.
       // We can add the other behaviour later.
 
-      val lastBranchIdx     = branchCount - 1
-      lazy val resultLinkId = outer.allocId()   // summed branch audio output will be written here
+      val lastBranchIdx = branchCount - 1
 
       branches.reverse.foreach { c =>
         import ugen._
@@ -434,11 +452,11 @@ object NestedUGenGraphBuilder {
         val nodeCtl = pauseNodeCtlName(childId)
         // condEq.poll(4, s"gate $branchIdx")
         Pause.kr(gate = condEq, node = nodeCtl.ir)
-        val resultCtl = linkCtlName(resultLinkId)
 
         val graphBranch = if (!c.resultUsed) c.peer.branch else {
           val e = c.peer.asInstanceOf[Then[GE]] // XXX TODO --- not pretty the cast
           val graphTail = SynthGraph {
+            val resultCtl   = linkCtlName(resultLinkId)
             val resultBus   = resultCtl.ir
             val resultRate  = audio // XXX TODO --- how to get rate?
             Out(resultRate, resultBus, e.result)

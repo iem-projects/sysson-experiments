@@ -25,20 +25,22 @@ object ScenarioNested extends App {
 
   lazy val sg = SynthGraph {
     val amp : GE = "amp" .kr(0.2)
-    val freq: GE = LFTri.kr(1.0 / 20, iphase = 3).linexp(-1, 1, 100, 1000)
+    val freq: GE = LFTri.kr(1.0 / 20, iphase = 3).linexp(-1, 1, 10, 1000)
 
     val res0: GE = IfLag (freq > 100, 0.5) Then {
       val gate0 = ThisBranch()
-      val res1: GE = IfLag (freq > 250, 0.1) Then {
+      val res1: GE = IfLag (freq > 333, 0.5) Then {
         val gate  = ThisBranch()
-        val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
-        val freq1 = Gate.kr(freq, gate)
-        Saw.ar(freq1) * 0.2 * env
-      } Else {
-        val gate  = ThisBranch()
+        gate.poll(4, "sin")
         val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
         val freq1 = Gate.kr(freq, gate)
         SinOsc.ar(freq1) * 0.2 * env
+      } Else {
+        val gate  = ThisBranch()
+        gate.poll(4, "saw")
+        val env   = EnvGen.ar(Env.asr(attack = 1.0, release = 0.5, curve = Curve.lin), gate = gate)
+        val freq1 = Gate.kr(freq, gate)
+        Saw.ar(freq1) * 0.2 * env
       }
       // gate.poll(10, "sine-gate")
       //      val env   = Sweep.ar(gate, 1.0/2).min(1)
@@ -50,6 +52,7 @@ object ScenarioNested extends App {
       // gate.poll(10, "noise-gate")
       //      val env = Sweep.ar(gate, 1.0/2).min(1)
       val env   = EnvGen.ar(Env.asr(attack = 1.5, release = 0.5, curve = Curve.lin), gate = gate)
+      gate.poll(4, "noise")
       WhiteNoise.ar(0.1) * env
     }
 
@@ -80,7 +83,7 @@ object ScenarioNested extends App {
 
   Server.run { s =>
     /* val syn = */ ScenarioMod.play(ug, args = List("freq" -> 0))
-    Thread.sleep(20000)
+    Thread.sleep(22000)
     s.quit()
     sys.exit()
   }
