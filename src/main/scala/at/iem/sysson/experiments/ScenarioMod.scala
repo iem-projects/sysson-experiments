@@ -21,7 +21,7 @@ import de.sciss.synth._
 import de.sciss.synth.ugen._
 
 object ScenarioMod {
-  val CREATE_PDF = false
+  val CREATE_PDF = true
 
   def main(args: Array[String]): Unit = {
     If.monolithic = false

@@ -102,6 +102,7 @@ sealed trait Then[+A] extends Lazy {
 
   def cond  : GE
   def branch: SynthGraph
+  def result: A
 
   private[synth] final def force(b: UGenGraph.Builder): Unit = UGenGraph.builder match {
     case nb: NestedUGenGraphBuilder => visit(nb)
@@ -123,7 +124,7 @@ sealed trait IfThenLike[+A] extends IfOrElseIfThen[A] {
   def ElseIf (cond: GE): ElseIf[A] = new ElseIf(this, cond)
 }
 
-final case class IfThen[A](cond: GE, branch: SynthGraph)(val res: A)
+final case class IfThen[A](cond: GE, branch: SynthGraph)(val result: A)
   extends IfThenLike[A]
   with Lazy {
 
@@ -137,7 +138,7 @@ final case class IfThen[A](cond: GE, branch: SynthGraph)(val res: A)
 //      case _ => sys.error(s"Cannot expand modular IfGE outside of SysSon UGen graph builder")
 //    }
 }
-final case class IfLagThen[A](cond: GE, dur: GE, branch: SynthGraph)(val res: A)
+final case class IfLagThen[A](cond: GE, dur: GE, branch: SynthGraph)(val result: A)
   extends IfThenLike[A]
 
 final case class ElseIf[+A](pred: IfOrElseIfThen[A], cond: GE) {
@@ -154,7 +155,7 @@ sealed trait ElseOrElseIfThen[+A] extends Then[A] {
   def pred: IfOrElseIfThen[A]
 }
 
-final case class ElseIfThen[+A](pred: IfOrElseIfThen[A], cond: GE, branch: SynthGraph)(val res: A)
+final case class ElseIfThen[+A](pred: IfOrElseIfThen[A], cond: GE, branch: SynthGraph)(val result: A)
   extends IfOrElseIfThen[A] with ElseOrElseIfThen[A] {
 
   def ElseIf (cond: GE): ElseIf[A] = new ElseIf(this, cond)
@@ -198,9 +199,12 @@ sealed trait ElseLike[+A] extends ElseOrElseIfThen[A] {
 }
 
 final case class ElseUnit(pred: IfOrElseIfThen[Any], branch: SynthGraph)
-  extends ElseLike[Any]
+  extends ElseLike[Any] {
 
-final case class ElseGE(pred: IfOrElseIfThen[GE], branch: SynthGraph)(val res: GE)
+  def result: Any = ()
+}
+
+final case class ElseGE(pred: IfOrElseIfThen[GE], branch: SynthGraph)(val result: GE)
   extends ElseLike[GE] with GE /* .Lazy */ with AudioRated {
 
   private[synth] def expand: UGenInLike = {

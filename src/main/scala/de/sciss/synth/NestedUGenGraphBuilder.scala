@@ -16,9 +16,9 @@ package de.sciss.synth
 
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, DC, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
 
-import scala.annotation.elidable
+import scala.annotation.{elidable, tailrec}
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
 
 object NestedUGenGraphBuilder {
@@ -34,7 +34,8 @@ object NestedUGenGraphBuilder {
     var numChannels = 0   // of the result signal
   }
 
-  final class ExpIfCase(val top: ExpIfTop, val peer: Then[Any], val predMask: Int, val branchIdx: Int) {
+  final class ExpIfCase(val peer: Then[Any], val pred: Option[ExpIfCase], val top: ExpIfTop,
+                        val predMask: Int, val branchIdx: Int) {
     var resultUsed = false
 
     val thisMask = predMask | (1 << branchIdx)
@@ -263,7 +264,16 @@ object NestedUGenGraphBuilder {
           expandLinkSink(link)
 
         case expIfCase: ExpIfCase =>
-          ???
+          // mark this case and all its predecessors as result-used.
+          @tailrec def loop(c: ExpIfCase): Unit = if (!c.resultUsed) {
+            c.resultUsed = true
+            c.pred match {
+              case Some(p) => loop(p)
+              case _ =>
+            }
+          }
+          loop(expIfCase)
+          DC.ar(0)
       }
 
     // ---- UGenGraph.Builder ----
@@ -272,16 +282,16 @@ object NestedUGenGraphBuilder {
 
     def expandIfCase(c: Then[Any]): ExpIfCase = {
       // create a new ExpIfCase
-      val res = c match {
+      val res: ExpIfCase = c match {
         case i: IfThenLike[Any] =>
           val expTop = new ExpIfTop(lagTime = i.dur, selBranchId = outer.allocId())
           expIfTops ::= expTop
-          new ExpIfCase(expTop, peer = i, predMask = 0, branchIdx = 0)
+          new ExpIfCase(peer = i, top = expTop, pred = None, predMask = 0, branchIdx = 0)
 
         case e: ElseOrElseIfThen[Any] =>
           val expPar = e.pred.visit(this)
           val expTop = expPar.top
-          new ExpIfCase(expTop, peer = e,
+          new ExpIfCase(peer = e, top = expTop, pred = Some(expPar),
             predMask = expPar.predMask | (1 << expPar.branchIdx), branchIdx = expTop.branchCount)
       }
 
@@ -427,11 +437,11 @@ object NestedUGenGraphBuilder {
         val resultCtl = linkCtlName(resultLinkId)
 
         val graphBranch = if (!c.resultUsed) c.peer.branch else {
-          val e = c.peer.asInstanceOf[ElseIfThen[GE]] // XXX TODO --- not pretty the cast
+          val e = c.peer.asInstanceOf[Then[GE]] // XXX TODO --- not pretty the cast
           val graphTail = SynthGraph {
             val resultBus   = resultCtl.ir
             val resultRate  = audio // XXX TODO --- how to get rate?
-            Out(resultRate, resultBus, e.res)
+            Out(resultRate, resultBus, e.result)
           }
           val graphHead = e.branch
           graphHead.copy(sources = graphHead.sources ++ graphTail.sources,
