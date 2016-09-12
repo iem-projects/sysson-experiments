@@ -16,8 +16,7 @@ package de.sciss.synth
 
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
-import de.sciss.synth.ugen.impl.modular.IfGEImpl
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -80,7 +79,7 @@ object NestedUGenGraphBuilder {
 
   // single control for setting the bus index
   def linkCtlName(id: Int): String =
-  s"$$ln$id"
+    s"$$ln$id"
 
   private def isBinary(in: GE): Boolean = {
     import BinaryOpUGen._
@@ -180,7 +179,7 @@ object NestedUGenGraphBuilder {
           // between the if-block's return signal and its
           // dependents.
           source match {
-            case _: IfGEImpl =>
+            case _: ElseGE =>
               // XXX TODO --- what to do with the damn control proxies?
               val graphC  = SynthGraph(sources = _sources.drop(i + 1), controlProxies = ctlProxiesCpy)
               val child   = new InnerImpl(childId = -1, thisExpIfCase = None, parent = builder, name = "continue")
@@ -258,8 +257,13 @@ object NestedUGenGraphBuilder {
           expandLinkSink(link)
 
         case link: Link =>
+          ??? // XXX TODO --- this case should be removed, it is probably not used any longer
+
           // if reference found
           expandLinkSink(link)
+
+        case expIfCase: ExpIfCase =>
+          ???
       }
 
     // ---- UGenGraph.Builder ----
@@ -328,6 +332,14 @@ object NestedUGenGraphBuilder {
 //      val selBranchId = topChild.selectedBranchId
 //      val _hasLag     = topChild.hasLag
 //      mkIfCaseChild(c, _branchIdx = _branchIdx, selBranchId = selBranchId, _hasLag = _hasLag)
+//    }
+
+//    def expandIfResult(e: ElseGE, ref: AnyRef): GE = {
+//      val res = visit[GE](ref, sys.error(s"Trying to refer to ElseGE in same nesting level"))
+////
+////      val expPar = e.pred.visit(this)
+////      val expTop = expPar.top
+//      res
 //    }
 
     private def expandIfCases(expTop: ExpIfTop): Unit = {
@@ -686,4 +698,6 @@ trait NestedUGenGraphBuilder extends BasicUGenGraphBuilder {
   //////////////////////////////////
 
   def expandIfCase(c: Then[Any]): ExpIfCase
+
+//  def expandIfResult(e: ElseGE, ref: AnyRef): GE
 }

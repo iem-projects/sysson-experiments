@@ -95,7 +95,7 @@ final case class IfLag(cond: GE, dur: GE) {
 
 sealed trait Then[+A] extends Lazy {
   // this acts now as a fast unique reference
-  @transient final private[ugen] lazy val ref = new AnyRef
+  @transient final protected lazy val ref = new AnyRef
 
   // ---- constructor ----
   SynthGraph.builder.addLazy(this)
@@ -203,13 +203,20 @@ final case class ElseUnit(pred: IfOrElseIfThen[Any], branch: SynthGraph)
 final case class ElseGE(pred: IfOrElseIfThen[GE], branch: SynthGraph)(val res: GE)
   extends ElseLike[GE] with GE /* .Lazy */ with AudioRated {
 
-  private[synth] def expand: UGenInLike = ???
+  private[synth] def expand: UGenInLike = {
+    val b = UGenGraph.builder
+    b.visit(ref, sys.error("Trying to expand ElseGE in same nesting level"))
+  }
+//    UGenGraph.builder match {
+//      case sysson: NestedUGenGraphBuilder => sysson.expandIfResult(this, ref)
+//      case _ => sys.error("Cannot expand ElseGE outside of NestedUGenGraphBuilder")
+//    }
 }
 
 final case class ThisBranch() extends GE.Lazy with ControlRated {
   protected def makeUGens: UGenInLike =
     UGenGraph.builder match {
       case sysson: NestedUGenGraphBuilder => sysson.thisBranch
-      case _ => sys.error(s"Cannot expand ThisBranch outside of SysSon UGen graph builder")
+      case _ => sys.error("Cannot expand ThisBranch outside of NestedUGenGraphBuilder")
     }
 }
