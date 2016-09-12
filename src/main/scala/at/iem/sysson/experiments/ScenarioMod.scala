@@ -54,29 +54,25 @@ object ScenarioMod {
     }
 
     val sg2 = SynthGraph {
-      val amp : GE = "amp" .kr(0.2)
+      val amp : GE = "amp" .kr(0.5)
       val freq: GE = "freq".kr
 
       val res0: GE = If (freq > 1000) Then {
-        // WhiteNoise.ar.poll(0, "HELLO SIN")
-        SinOsc.ar(freq)
+        SinOsc.ar(Seq(freq, freq * 1.1)) * 0.3
       } ElseIf (freq > 100) Then {
-        // WhiteNoise.ar.poll(0, "HELLO DUST")
-        Dust.ar(freq)
+        Dust.ar(Seq.fill(2)(freq))
       } Else {
-        // WhiteNoise.ar.poll(0, "HELLO NOISE")
-        WhiteNoise.ar
-//        WhiteNoise.ar(Seq.fill(2)(1))
+        WhiteNoise.ar(Seq.fill(2)(0.3))
       }
 
-      Out.ar(0, Pan2.ar(res0 * amp))
+      Out.ar(0, res0 * amp)
     }
 
     val ug = NestedUGenGraphBuilder.build(sg2)
 
 //    val sd = SynthDef("test", ug)
 
-    if (CREATE_PDF) print("top", 0, ug)
+    if (CREATE_PDF) mkPDF(ug)
 
     Server.run { s =>
       s.dumpOSC()
@@ -95,18 +91,22 @@ object ScenarioMod {
     }
   }
 
-  def print(name: String, level: Int, res: NestedUGenGraphBuilder.Result): Unit = {
-    import at.iem.scalacollider.ScalaColliderDOT
-    val dotC        = ScalaColliderDOT.Config()
-    dotC.input      = res /* sd */.graph
-    dotC.graphName  = /* sd. */ name
-    dotC.rateColors = true
-    //      val dot         = ScalaColliderDOT(dotC)
-    //      println(dot)
-    ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
-    res.children.zipWithIndex.foreach { case (child, ci) =>
-      print(s"child ${ci + 1}", level + 1, child)
+  def mkPDF(res: NestedUGenGraphBuilder.Result): Unit = {
+    def print(childIndices: List[Int], res0: NestedUGenGraphBuilder.Result): Unit = {
+      import at.iem.scalacollider.ScalaColliderDOT
+      val dotC        = ScalaColliderDOT.Config()
+      dotC.input      = res0 /* sd */.graph
+      val name = if (childIndices.isEmpty) "top" else childIndices.reverse.mkString("child ", " ", "")
+      dotC.graphName  = /* sd. */ name
+      dotC.rateColors = true
+      //      val dot         = ScalaColliderDOT(dotC)
+      //      println(dot)
+      ScalaColliderDOT.writePDF(dotC, file("dot") / s"${name.replace(' ', '_')}.pdf")
+      res0.children.zipWithIndex.foreach { case (child, ci) =>
+        print((ci + 1) :: childIndices, child)
+      }
     }
+    print(Nil, res)
   }
 
   def play(res0: NestedUGenGraphBuilder.Result, args: List[ControlSet]): Node = {

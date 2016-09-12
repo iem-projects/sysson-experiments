@@ -52,7 +52,7 @@ object ScenarioUnit extends App {
 
   val ug = NestedUGenGraphBuilder.build(sg)
 
-  if (CREATE_PDF) ScenarioMod.print("top", 0, ug)
+  if (CREATE_PDF) ScenarioMod.mkPDF(ug)
 
   Server.run { s =>
     s.dumpOSC()
