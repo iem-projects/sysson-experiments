@@ -21,7 +21,7 @@ import de.sciss.synth.ugen._
 object ScenarioNested extends App {
   val CREATE_PDF = true
 
-  If.monolithic = false
+//  If.monolithic = false
 
   lazy val sg = SynthGraph {
     val amp : GE = "amp" .kr(0.2)

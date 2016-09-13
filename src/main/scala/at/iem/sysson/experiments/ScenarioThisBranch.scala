@@ -21,7 +21,7 @@ import de.sciss.synth.ugen._
 object ScenarioThisBranch extends App {
   val CREATE_PDF = false
 
-  If.monolithic = false
+//  If.monolithic = false
 
   val sg = SynthGraph {
     val amp : GE = "amp" .kr(0.2)

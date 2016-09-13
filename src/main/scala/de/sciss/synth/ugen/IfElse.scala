@@ -61,7 +61,7 @@ import scala.language.implicitConversions
  */
 
 object If {
-  var monolithic: Boolean = true
+//  var monolithic: Boolean = true
 
 //  def apply(cond: GE): IfBuilderT =
 //    if (If.monolithic) IfMono(cond = cond, lagTime = Constant.C0)

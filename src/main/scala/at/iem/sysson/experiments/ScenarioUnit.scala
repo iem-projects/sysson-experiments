@@ -9,7 +9,7 @@ object ScenarioUnit extends App {
 
   val CREATE_PDF = true
 
-  If.monolithic = false
+//  If.monolithic = false
 
   lazy val sg0 = SynthGraph {
     import Ops.stringToLazyCtlFactory

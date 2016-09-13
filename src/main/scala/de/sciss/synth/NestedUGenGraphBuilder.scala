@@ -17,7 +17,7 @@ package de.sciss.synth
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.BranchOut
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseGE, ElseOrElseIfThen, If, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, ElseGE, ElseOrElseIfThen, IfThenLike, Impulse, In, Out, Then, UnaryOpUGen}
 
 import scala.annotation.{elidable, tailrec}
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -149,8 +149,9 @@ object NestedUGenGraphBuilder {
       throw new UnsupportedOperationException("ThisBranch used outside of if-branch")
 
     def thisBranch: GE =
-      if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
-      else {
+      // if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
+      // else
+      {
         val c     = thisExpIfCase                .getOrElse(errorOutsideBranch())
         val in0   = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
         val top   = c.top
@@ -165,7 +166,7 @@ object NestedUGenGraphBuilder {
         }
       }
 
-    def enterIfCase(cond: GE): Unit = if (If.monolithic) sourceMap += "if-case" -> cond
+//    def enterIfCase(cond: GE): Unit = if (If.monolithic) sourceMap += "if-case" -> cond
 
     final def buildInner(g0: SynthGraph): Result = {
       var _sources: Vec[Lazy] = g0.sources
@@ -421,8 +422,7 @@ object NestedUGenGraphBuilder {
           val graphTail = SynthGraph {
             val resultCtl   = linkCtlName(resultLinkId)
             val resultBus   = resultCtl.ir
-            // val resultRate  = audio
-            BranchOut(expTop /* resultRate */, resultBus, e.result)
+            BranchOut(expTop, resultBus, e.result)
           }
           val graphHead = e.branch
           graphHead.copy(sources = graphHead.sources ++ graphTail.sources,
@@ -432,9 +432,7 @@ object NestedUGenGraphBuilder {
         // now call `UGenGraph.use()` with a child builder, and expand `graphBranch`
         val child   = new InnerImpl(childId = childId, thisExpIfCase = Some(c),
           parent = builder, name = s"inner{if $resultLinkId case ${c.branchIdx}")
-        // println(s"BUILDING BRANCH -- old $numChannels")
         val childRes = child.build(graphBranch)
-        // println(s"------------------ new $numChannels")
         _children ::= childRes
       }
     }
@@ -469,14 +467,9 @@ object NestedUGenGraphBuilder {
       // log(s"visit  ${ref.hashCode.toHexString}")
       sourceMap.getOrElse(ref, {
         log(this, s"expand ${smartRef(ref)}...")
-        val exp = parent.tryRefer(ref).fold[Any] {
+        val exp = parent.tryRefer(ref).getOrElse {
           log(this, s"...${smartRef(ref)} -> not yet found")
           init()
-        } { in => // case (link, in) =>
-          // log(this, s"...${smartRef(ref)} -> found in parent: $link")
-          log(this, s"...${smartRef(ref)} -> found in parent")
-          //          _linkIn ::= link
-          in
         }
         sourceMap += ref -> exp
         log(this, s"...${smartRef(ref)} -> ${exp.hashCode.toHexString} ${printSmart(exp)}")
@@ -527,27 +520,21 @@ object NestedUGenGraphBuilder {
   @elidable(elidable.CONFIG) private def log(builder: Impl, what: => String): Unit =
     if (showLog) println(s"ScalaCollider-DOT <${builder.toString}> $what")
 
-  def enterIfCase(cond: GE): Unit = UGenGraph.builder match {
-    case nb: NestedUGenGraphBuilder => nb.enterIfCase(cond)
-    case _ => // ignore
-  }
+//  def enterIfCase(cond: GE): Unit = UGenGraph.builder match {
+//    case nb: NestedUGenGraphBuilder => nb.enterIfCase(cond)
+//    case _ => // ignore
+//  }
 }
 trait NestedUGenGraphBuilder extends BasicUGenGraphBuilder {
   import NestedUGenGraphBuilder.ExpIfCase
 
   protected def build(controlProxies: Iterable[ControlProxyLike]): UGenGraph
 
-//  def expandIfCases(cases: List[IfCase[GE]], lagTime: GE): Link
-
   /** Returns gate that is open when this if branch is selected. */
   def thisBranch: GE
 
-  /** Used by monolithic if-block. */
-  def enterIfCase(cond: GE): Unit
-
-  //////////////////////////////////
+//  /** Used by monolithic if-block. */
+//  def enterIfCase(cond: GE): Unit
 
   def expandIfCase(c: Then[Any]): ExpIfCase
-
-//  def expandIfResult(e: ElseGE, ref: AnyRef): GE
 }

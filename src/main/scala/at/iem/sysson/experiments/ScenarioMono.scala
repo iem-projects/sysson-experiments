@@ -9,7 +9,7 @@ import de.sciss.synth.{GE, SynthDef}
 object ScenarioMono extends App {
   val CREATE_PDF = false
 
-  If.monolithic = true
+//  If.monolithic = true
 
   val sd = SynthDef("monolith") {
     val amp : GE = "amp" .kr(0.2)

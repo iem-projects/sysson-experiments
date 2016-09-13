@@ -134,8 +134,9 @@ object SysSonUGenGraphBuilderOLD {
       throw new UnsupportedOperationException("ThisBranch used outside of if-branch")
 
     def thisBranch: GE =
-      if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
-      else {
+      // if (If.monolithic) sourceMap.getOrElse("if-case", errorOutsideBranch()).asInstanceOf[GE]
+      // else
+      {
         val in0       = parent.tryRefer("sel-branch").getOrElse(errorOutsideBranch())
         if (hasLag) {
           // we don't know if we are the last branch, so simply skip that optimization
@@ -146,7 +147,7 @@ object SysSonUGenGraphBuilderOLD {
         }
       }
 
-    def enterIfCase(cond: GE): Unit = if (If.monolithic) sourceMap += "if-case" -> cond
+    def enterIfCase(cond: GE): Unit = ??? // if (If.monolithic) sourceMap += "if-case" -> cond
 
     final def buildInner(g0: SynthGraph): Result = {
       var _sources: Vec[Lazy] = g0.sources

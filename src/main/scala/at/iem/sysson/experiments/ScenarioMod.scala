@@ -24,7 +24,7 @@ object ScenarioMod {
   val CREATE_PDF = true
 
   def main(args: Array[String]): Unit = {
-    If.monolithic = false
+    // If.monolithic = false
 
     lazy val _ = SynthGraph {
       val amp : GE = "amp".kr
