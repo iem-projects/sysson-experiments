@@ -14,10 +14,12 @@ val x = play {
   val tick       = Impulse.ar("tick".kr(1))
   val maxDf      = "max-df".ar(100)
   
-  var taken      = Vector.fill(numVoices)(0: GE): GE
+  var takenV     = Vector.fill(numVoices)(0: GE): GE
   val voiceNos   = (0 until numVoices): GE
 
-    val trPoll = "poll".tr
+  // var takenI     = Vector.fill(numTraj)(0: GE): GE
+
+  val trPoll = "poll".tr
   
   // for each frequency, find the best past match
   for (tIdx <- 0 until numTraj) {
@@ -31,15 +33,21 @@ val x = play {
     freqMatch.poll(trPoll, s"freq-m[$tIdx]")
     val bothOn    = voiceOnOff & isOn
     bothOn.poll   (trPoll, s"both  [$tIdx]")
-    val best      = ArrayMax.ar(freqMatch * bothOn * !taken)
-    taken.poll    (trPoll, s"taken [$tIdx]")
+    val best      = ArrayMax.ar(freqMatch * (bothOn & !takenV))
+    takenV.poll   (trPoll, s"taken [$tIdx]")
     
-    val idxMask   = voiceNos sig_== best.index
-    taken        |= idxMask
+    val bestMask  = voiceNos sig_== best.index  // & ~1 ?
+    takenV       |= bestMask
+    
+    val notFound  = best.index sig_== 0
+    val startTraj = notFound & isOn
+    val free      = ArrayMax.ar(startTraj & !takenV)
+    val freeMask  = voiceNos sig_== free.index  // & ~1 ?
+    takenV       |= freeMask
   }
   
   for (vIdx <- 0 until numVoices) {
-    (taken \ vIdx).poll(trPoll, s"taken$vIdx")
+    (takenV \ vIdx).poll(trPoll, s"taken$vIdx")
   }
 }
 
@@ -58,14 +66,7 @@ x.set("v-amp" -> Vector(0f, 1f, 1f, 0f, 0f))
 
 x.set("poll" -> 1)
 x.set("amp"  -> Vector(1f, 1f))
-x.set("poll" -> 1)  // OK, voice 1 taken
+x.set("poll" -> 1)
 x.set("freq" -> Vector(523f, 325f))
-x.set("poll" -> 1)  // OK, voices 1 and 2 taken
-
-/*
-// all identical (e.g. all zero) -> reported index is zero
-play {
-  ArrayMax.ar(Vector.fill(4)(DC.ar(1))).poll(1, "max")
-  ()
-}
-*/
+x.set("poll" -> 1)
+x.set("amp"  -> Vector(1f, 0f))
