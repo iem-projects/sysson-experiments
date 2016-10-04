@@ -12,7 +12,7 @@
  *	contact@sciss.de
  */
 
-package at.iem.sysson.experiments
+package at.iem.sysson.experiments.old
 
 import de.sciss.synth.ugen.{AudioControlProxy, ControlProxy, ControlValues}
 import de.sciss.synth.{GE, Lazy, Rate, UGenGraph, UGenInLike, audio, control, scalar}

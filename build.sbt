@@ -11,13 +11,16 @@ scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "ut
 lazy val scalaColliderVersion = "1.21.0"
 lazy val ugensVersion         = "1.16.0"
 lazy val fileUtilVersion      = "1.1.2"
+lazy val equalVersion         = "0.1.1"
 lazy val dotVersion           = "0.3.0"
 lazy val traceVersion         = "0.1.0"
 
 libraryDependencies ++= Seq(
-  "de.sciss" %% "scalacollider"          % scalaColliderVersion,
-  "de.sciss" %% "scalacolliderugens-api" % ugensVersion,
-  "de.sciss" %% "fileutil"               % fileUtilVersion,
-  "at.iem"   %% "scalacollider-dot"      % dotVersion,
-  "at.iem"   %% "scalacollider-trace"    % traceVersion
+  "de.sciss" %% "scalacollider"              % scalaColliderVersion,
+  "de.sciss" %% "scalacolliderugens-api"     % ugensVersion,
+  "de.sciss" %% "scalacolliderugens-plugins" % ugensVersion,
+  "de.sciss" %% "fileutil"                   % fileUtilVersion,
+  "de.sciss" %% "equal"                      % equalVersion,
+  "at.iem"   %% "scalacollider-dot"          % dotVersion,
+  "at.iem"   %% "scalacollider-trace"        % traceVersion
 )

@@ -14,7 +14,7 @@
 
 package at.iem.sysson.experiments
 
-import at.iem.sysson.experiments.Ops._
+import at.iem.sysson.experiments.old.Ops._
 import de.sciss.synth._
 import de.sciss.synth.ugen._
 

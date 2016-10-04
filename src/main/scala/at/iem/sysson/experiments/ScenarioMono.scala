@@ -1,7 +1,7 @@
 package at.iem.sysson.experiments
 
 import at.iem.scalacollider.ScalaColliderDOT
-import at.iem.sysson.experiments.Ops._
+import at.iem.sysson.experiments.old.Ops._
 import de.sciss.file._
 import de.sciss.synth.ugen.{Dust, If, Out, Pan2, SinOsc, WhiteNoise}
 import de.sciss.synth.{GE, SynthDef}

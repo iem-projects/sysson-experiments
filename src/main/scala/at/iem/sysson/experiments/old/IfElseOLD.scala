@@ -1,4 +1,4 @@
-package at.iem.sysson.experiments
+package at.iem.sysson.experiments.old
 
 import de.sciss.synth
 import de.sciss.synth.GE

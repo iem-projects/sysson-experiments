@@ -12,7 +12,7 @@ object ScenarioUnit extends App {
 //  If.monolithic = false
 
   lazy val sg0 = SynthGraph {
-    import Ops.stringToLazyCtlFactory
+    import at.iem.sysson.experiments.old.Ops.stringToLazyCtlFactory
     import ugen._
 
     val freq: GE = "freq".kr
@@ -32,7 +32,7 @@ object ScenarioUnit extends App {
   }
 
   lazy val sg = SynthGraph {
-    import Ops.stringToLazyCtlFactory
+    import at.iem.sysson.experiments.old.Ops.stringToLazyCtlFactory
     import ugen._
 
     val freq: GE = "freq".kr
