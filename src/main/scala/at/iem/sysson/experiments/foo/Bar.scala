@@ -3,7 +3,7 @@ package at.iem.sysson.experiments.foo
 trait Bar {
     trait GE
     trait If[A] {
-      def Else[B >: A, Out](cond: => B)(implicit result: Result[B, Out]): Out
+      def Else[B >: A, Res](cond: => B)(implicit result: Result[B, Res]): Res
     }
     trait IfGE extends If[GE] with GE
 
@@ -16,7 +16,7 @@ trait Bar {
     object Result extends LowPri {
       implicit def GERes: Result[GE, IfGE] = ???
     }
-    sealed trait Result[-A, Out]
+    sealed trait Result[-A, B]
 
     def IfExample: If[SinOsc]
 

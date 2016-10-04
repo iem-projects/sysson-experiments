@@ -115,7 +115,7 @@ sealed trait Then[+A] extends Lazy {
 
 sealed trait IfOrElseIfThen[+A] extends Then[A] {
   import ugen.{Else => _Else} // really, Scala?
-  def Else [B >: A, Out](branch: => B)(implicit result: _Else.Result[B, Out]): Out = result.make(this, branch)
+  def Else [B >: A, Res](branch: => B)(implicit result: _Else.Result[B, Res]): Res = result.make(this, branch)
 }
 
 sealed trait IfThenLike[+A] extends IfOrElseIfThen[A] {
@@ -165,8 +165,8 @@ object Else {
   object Result extends LowPri {
     implicit def GE: Else.GE.type = Else.GE
   }
-  sealed trait Result[-A, Out] {
-    def make(pred: IfOrElseIfThen[A], branch: => A): Out
+  sealed trait Result[-A, B] {
+    def make(pred: IfOrElseIfThen[A], branch: => A): B
   }
 
   object GE extends Result[synth.GE, ElseGE] {

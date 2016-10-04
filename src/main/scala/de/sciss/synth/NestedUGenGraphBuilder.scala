@@ -467,7 +467,7 @@ object NestedUGenGraphBuilder {
       // log(s"visit  ${ref.hashCode.toHexString}")
       sourceMap.getOrElse(ref, {
         log(this, s"expand ${smartRef(ref)}...")
-        val exp = parent.tryRefer(ref).getOrElse {
+        val exp: Any = parent.tryRefer(ref).getOrElse {
           log(this, s"...${smartRef(ref)} -> not yet found")
           init()
         }

@@ -19,13 +19,14 @@ package impl
 import de.sciss.synth.NestedUGenGraphBuilder.ExpIfTop
 
 import scala.collection.immutable.{IndexedSeq => Vec}
+import UGenSource._
 
 final case class BranchOut(top: ExpIfTop, bus: GE, in: GE)
   extends UGenSource.ZeroOut with HasSideEffect with IsIndividual with AudioRated {
 
-  protected def makeUGens: Unit = unwrap(bus.expand +: in.expand.outputs)
+  protected def makeUGens: Unit = unwrap(this, bus.expand +: in.expand.outputs)
 
-  protected def makeUGen(_args: Vec[UGenIn]): Unit = {
+  private[synth] def makeUGen(_args: Vec[UGenIn]): Unit = {
     val _args1  = matchRateFrom(_args, 1, audio)
     val numCh   = _args.size - 1
     if (top.numChannels < numCh) top.numChannels = numCh

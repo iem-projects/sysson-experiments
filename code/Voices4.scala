@@ -29,11 +29,11 @@ val x = play {
   var activated   = Vector.fill(numVoices)(0: GE): GE
   
   for (vIdx <- 0 until numVoices) {
-    (voiceFreq  \ vIdx).poll(trPoll, s"fr-in [$vIdx]")
+    (voiceFreq  \ vIdx).poll(trPoll & (voiceOnOff \ vIdx), s"fr-in [$vIdx]")
   }
-  for (vIdx <- 0 until numVoices) {
-    (voiceOnOff \ vIdx).poll(trPoll, s"on-in [$vIdx]")
-  }
+//   for (vIdx <- 0 until numVoices) {
+//     (voiceOnOff \ vIdx).poll(trPoll, s"on-in [$vIdx]")
+//   }
 
   // for each frequency, find the best past match
   val noFounds = (0 until numTraj).map { tIdx =>
@@ -42,7 +42,7 @@ val x = play {
     val isOn  = aIn > 0
     
     val freqMatch = (maxDf - (voiceFreq absdif fIn)).max(0)
-    freqMatch.poll(trPoll, s"freq-m[$tIdx]")
+//     freqMatch.poll(trPoll, s"freq-m[$tIdx]")
     val bothOn    = voiceOnOff & isOn
 //     bothOn.poll   (trPoll, s"both  [$tIdx]")
 //     val bestIn    = 0 +: (freqMatch * (bothOn & !voiceOnOff))
@@ -54,14 +54,15 @@ val x = play {
 //     voiceOnOff.poll(trPoll , s"taken [$tIdx]")
     
     val bestMask  = voiceNos sig_== bestIdx
-    voiceOnOff   |= bestMask
+//     voiceOnOff   |= bestMask
     activated    |= bestMask
     voiceFreq     = voiceFreq * !bestMask + fIn * bestMask
-    
+
+    for (vIdx <- 0 until numVoices)   
+      (vIdx: GE).poll(trPoll & (bestMask \ vIdx), s"match [$tIdx]")
+
     bestIdx sig_== -1
   }
-
-//   activated.poll(trPoll, s"match [$tIdx]")
 
   for (tIdx <- 0 until numTraj) {
     val fIn   = freqIn \ tIdx
@@ -73,22 +74,24 @@ val x = play {
     val free      = ArrayMax.ar(0 +: (startTraj & !activated))
     val freeIdx   = free.index - 1
     val freeMask  = voiceNos sig_== freeIdx
-    voiceOnOff   |= freeMask
+//     voiceOnOff   |= freeMask
     activated    |= freeMask
     voiceFreq     = voiceFreq * !freeMask + fIn * freeMask
 
-    activated.poll(trPoll, s"activ [$tIdx]")
+//    activated.poll(trPoll & activated, s"activ [$tIdx]")
+    for (vIdx <- 0 until numVoices)   
+      (vIdx: GE).poll(trPoll & (freeMask \ vIdx), s"activ [$tIdx]")
   }
   
   voiceOnOff = activated  // release unused voices
 //   activated.poll(trPoll, "activated")
   
   for (vIdx <- 0 until numVoices) {
-    (voiceFreq \ vIdx).poll(trPoll, s"fr-out[$vIdx]")
+    (voiceFreq \ vIdx).poll(trPoll & (voiceOnOff \ vIdx), s"fr-out[$vIdx]")
   }
-  for (vIdx <- 0 until numVoices) {
-    (voiceOnOff \ vIdx).poll(trPoll, s"on-out[$vIdx]")
-  }
+//   for (vIdx <- 0 until numVoices) {
+//     (voiceOnOff \ vIdx).poll(trPoll, s"on-out[$vIdx]")
+//   }
   
   val stateOut = Flatten(voiceFreq ++ voiceOnOff)
   LocalOut.kr(stateOut)

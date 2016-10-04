@@ -37,10 +37,10 @@
       object Result extends LowPri {
         implicit def GERes: Result[GE, IfGE] = ???
       }
-      sealed trait Result[-A, Out]
+      sealed trait Result[-A, B]
     }
     trait ElseBuilder[A] {
-      def apply[B >: A, Out](branch: => B)(implicit result: ElseBuilder.Result[B, Out]): Out
+      def apply[B >: A, Res](branch: => B)(implicit result: ElseBuilder.Result[B, Res]): Res
     }
 
     trait ElseIfBuilder[A] {
@@ -62,10 +62,11 @@
         Out(SinOsc(freq))
       }
 
-      val res1 = If (freq > 400 & freq <= 600) Then {
+      val res1: Any = If (freq > 400 & freq <= 600) Then {
         Out(SinOsc(freq))
       } Else {
         freq.poll()
+
       }
 
       // ---- GE result ----
