@@ -98,7 +98,7 @@ object Voices {
 
     val g = traceGraph {
       val numVoices     = numTraj * 2
-      val releaseBlocks = 2 // 4
+      val releaseBlocks = 1 // 2 // 4
 
       val stateInKr     = LocalIn.kr(Seq.fill(numVoices * 2)(0))
       var voiceFreq     = Vector.tabulate(numVoices)(i => stateInKr \ i): GE
@@ -180,8 +180,8 @@ object Voices {
       Vec(  0f,   0f), Vec(  0f,   0f),
       Vec(300f, 500f), Vec(300f, 500f),
       Vec(300f, 500f), Vec(300f, 500f),
-      Vec(500f, 300f), Vec(500f, 300f),
-      Vec(500f, 300f), Vec(500f, 300f)
+      Vec(500f, 300f), Vec(700f, 300f),
+      Vec(700f, 300f), Vec(500f, 300f)
     )
     val ampCtl = Vec[Vec[Float]](
       Vec(  0f,   0f), Vec(  0f,   0f),
