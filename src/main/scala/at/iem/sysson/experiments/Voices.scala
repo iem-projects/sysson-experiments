@@ -63,8 +63,11 @@ object Voices {
 
     def feedControl(sig: Vec[Vec[Float]], ctl: String, rate: Rate, bundle: BundleBuilder,
                     doneAction: DoneAction = freeSelf): Unit = {
-      val numChannels = sig.size
-      val numFrames   = sig.head.size
+      val numFrames   = sig.size
+      val numChannels = sig.head.size
+
+      // println(s"Control $ctl - numChannels $numChannels numFrames $numFrames")
+
       val df = SynthDef(s"feed_$ctl") {
         val buf   = "buf".ir
         val bus   = "bus".ir
@@ -101,33 +104,29 @@ object Voices {
       var voiceOnOff  = Vector.tabulate(numVoices)(i => stateIn \ (i + numVoices)): GE
       val voiceNos    = 0 until numVoices: GE
 
-      Trace(voiceFreq , "voice-freq-in")
-      Trace(voiceOnOff, "voice-on  -in")
+      Trace(voiceFreq , "vc-freq-in")
+      Trace(voiceOnOff, "vc-on  -in")
 
       val freqIn      = "freq".kr(Vector.fill(numTraj)(0))
       val ampIn       = "amp" .kr(Vector.fill(numTraj)(0))
 
-      Trace(freqIn, "freq-in")
-      Trace(ampIn , "amp -in")
+      Trace(freqIn, "in-freq")
+      Trace(ampIn , "in-amp")
 
-      // val tick        = Impulse.kr("tick".kr(1f))
       val maxDf       = "max-df".kr(100f)
-
-      // val trPoll      = "poll".tr
-      // val trPoll2     = "poll2".tr
 
       var activated   = Vector.fill(numVoices)(0: GE): GE
 
       // for each frequency, find the best past match
       val noFounds = (0 until numTraj).map { tIdx =>
-        val fIn   = freqIn \ tIdx
-        val aIn   = ampIn  \ tIdx
-        val isOn  = aIn > 0
+        val fIn       = freqIn \ tIdx
+        val aIn       = ampIn  \ tIdx
+        val isOn      = aIn > 0
 
         val freqMatch = (maxDf - (voiceFreq absdif fIn)).max(0)
         val bothOn    = voiceOnOff & isOn
         val bestIn    = 0 +: (freqMatch * (bothOn & !activated))
-        val best      = ArrayMax.ar(bestIn)
+        val best      = ArrayMax.kr(bestIn)
         val bestIdx   = best.index - 1
 
         val bestMask  = voiceNos sig_== bestIdx
@@ -144,9 +143,9 @@ object Voices {
         val aIn   = ampIn  \ tIdx
         val isOn  = aIn > 0
 
-        val notFound  = noFounds(tIdx) // bestIdx sig_== -1
+        val notFound  = noFounds(tIdx)
         val startTraj = notFound & isOn
-        val free      = ArrayMax.ar(0 +: (startTraj & !activated))
+        val free      = ArrayMax.kr(0 +: (startTraj & !activated))
         val freeIdx   = free.index - 1
         val freeMask  = voiceNos sig_== freeIdx
         activated    |= freeMask
@@ -157,8 +156,8 @@ object Voices {
 
       voiceOnOff = activated  // release unused voices
 
-      Trace(voiceFreq , "voice-freq-out")
-      Trace(voiceOnOff, "voice-on  -out")
+      Trace(voiceFreq , "vc-freq-out")
+      Trace(voiceOnOff, "vc-on  -out")
 
       val stateOut = Flatten(voiceFreq ++ voiceOnOff)
       LocalOut.kr(stateOut)
