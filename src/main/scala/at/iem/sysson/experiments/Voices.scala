@@ -97,12 +97,13 @@ object Voices {
     val numTraj     = 2 // 4
 
     val g = traceGraph {
-      val numVoices   = numTraj * 2
+      val numVoices     = numTraj * 2
+      val releaseBlocks = 2 // 4
 
-      val stateIn     = LocalIn.kr(Seq.fill(numVoices * 2)(0))
-      var voiceFreq   = Vector.tabulate(numVoices)(i => stateIn \ i): GE
-      var voiceOnOff  = Vector.tabulate(numVoices)(i => stateIn \ (i + numVoices)): GE
-      val voiceNos    = 0 until numVoices: GE
+      val stateInKr     = LocalIn.kr(Seq.fill(numVoices * 2)(0))
+      var voiceFreq     = Vector.tabulate(numVoices)(i => stateInKr \ i): GE
+      var voiceOnOff    = Vector.tabulate(numVoices)(i => stateInKr \ (i + numVoices  )): GE
+      val voiceNos      = 0 until numVoices: GE
 
       Trace(voiceFreq , "vc-freq-in")
       Trace(voiceOnOff, "vc-on  -in")
@@ -119,49 +120,58 @@ object Voices {
 
       // for each frequency, find the best past match
       val noFounds = (0 until numTraj).map { tIdx =>
-        val fIn       = freqIn \ tIdx
-        val aIn       = ampIn  \ tIdx
-        val isOn      = aIn > 0
+        val fIn         = freqIn \ tIdx
+        val aIn         = ampIn  \ tIdx
+        val isOn        = aIn > 0
 
-        val freqMatch = (maxDf - (voiceFreq absdif fIn)).max(0)
-        val bothOn    = voiceOnOff & isOn
-        val bestIn    = 0 +: (freqMatch * (bothOn & !activated))
-        val best      = ArrayMax.kr(bestIn)
-        val bestIdx   = best.index - 1
+        val freqMatch   = (maxDf - (voiceFreq absdif fIn)).max(0)
+        val bothOn      = voiceOnOff & isOn
+        val bestIn      = 0 +: (freqMatch * (bothOn & !activated))
+        val best        = ArrayMax.kr(bestIn)
+        val bestIdx     = best.index - 1
 
-        val bestMask  = voiceNos sig_== bestIdx
-        activated    |= bestMask
-        voiceFreq     = voiceFreq * !bestMask + fIn * bestMask
+        val bestMask    = voiceNos sig_== bestIdx
+        activated      |= bestMask
+        voiceFreq       = voiceFreq * !bestMask + fIn * bestMask
 
-        Trace(bestIdx, s"f-match $tIdx")
+        Trace(bestIdx, s"m-match $tIdx")
 
         bestIdx sig_== -1
       }
 
       for (tIdx <- 0 until numTraj) {
-        val fIn   = freqIn \ tIdx
-        val aIn   = ampIn  \ tIdx
-        val isOn  = aIn > 0
+        val fIn         = freqIn \ tIdx
+        val aIn         = ampIn  \ tIdx
+        val isOn        = aIn > 0
+        val voiceAvail  = !(activated | voiceOnOff)
 
-        val notFound  = noFounds(tIdx)
-        val startTraj = notFound & isOn
-        val free      = ArrayMax.kr(0 +: (startTraj & !activated))
-        val freeIdx   = free.index - 1
-        val freeMask  = voiceNos sig_== freeIdx
-        activated    |= freeMask
-        voiceFreq     = voiceFreq * !freeMask + fIn * freeMask
+        val notFound    = noFounds(tIdx)
+        val startTraj   = notFound & isOn
+        val free        = ArrayMax.kr(0 +: (startTraj & voiceAvail))
+        val freeIdx     = free.index - 1
+        val freeMask    = voiceNos sig_== freeIdx
+        activated      |= freeMask
+        voiceFreq       = voiceFreq * !freeMask + fIn * freeMask
 
-        Trace(freeIdx, s"f-free  $tIdx")
+        Trace(freeIdx, s"m-start $tIdx")
       }
 
-      voiceOnOff = activated  // release unused voices
+      // ---- voice generation ----
+      val voiceEnv      = Env.asr(attack = ControlDur.ir, release = ControlDur.ir * releaseBlocks)
+      val voiceEG       = EnvGen.ar(voiceEnv, gate = activated)
+
+//      val osc = SinOsc.ar(voiceFreq) * voiceEG / numVoices
+//      Out.ar(0, Mix(Pan2.ar(osc, Seq.tabulate(numVoices)(i => (i % 2) * 2 - 1))))
+
+      // ---- state out ----
+      val voiceEGOn = A2K.kr(voiceEG) sig_!= 0
+      voiceOnOff    = activated | voiceEGOn
 
       Trace(voiceFreq , "vc-freq-out")
       Trace(voiceOnOff, "vc-on  -out")
 
-      val stateOut = Flatten(voiceFreq ++ voiceOnOff)
-      LocalOut.kr(stateOut)
-      ()
+      val stateOutKr  = Flatten(voiceFreq ++ voiceOnOff)
+      LocalOut.kr(stateOutKr)
     }
 
     val bundle = new BundleBuilder
@@ -170,11 +180,13 @@ object Voices {
       Vec(  0f,   0f), Vec(  0f,   0f),
       Vec(300f, 500f), Vec(300f, 500f),
       Vec(300f, 500f), Vec(300f, 500f),
+      Vec(500f, 300f), Vec(500f, 300f),
       Vec(500f, 300f), Vec(500f, 300f)
     )
     val ampCtl = Vec[Vec[Float]](
       Vec(  0f,   0f), Vec(  0f,   0f),
       Vec(  0f,   0f), Vec(  0f,   0f),
+      Vec(  1f,   1f), Vec(  1f,   1f),
       Vec(  1f,   1f), Vec(  1f,   1f),
       Vec(  1f,   1f), Vec(  1f,   1f)
     )
@@ -182,7 +194,7 @@ object Voices {
     feedControl(ampCtl , "amp" , control, bundle)
 
     println("Tracing...")
-    val fut = g.traceFor(target = group, addAction = addToTail, fadeTime = -1, numBlocks = 8, bundle = bundle)
+    val fut = g.traceFor(target = group, addAction = addToTail, fadeTime = -1, numBlocks = 10, bundle = bundle)
     fut.printAndQuit()
   }
 }
