@@ -67,7 +67,7 @@ object Voices2 {
           listenTo(this)
           reactions += {
             case ValueChanged(_) =>
-              val amp = if (value == min) 0f else value.linlin(min, max, -20, 0).dbamp
+              val amp = if (value == min) 0f else value.linlin(min, max, -40, 0).dbamp
               amplitudes(trIdx) = amp
               setControls()
           }
@@ -140,6 +140,15 @@ object Voices2 {
 
       var activated   = Vector.fill(numVoices)(0: GE): GE
 
+      // lagTime = lagSteps * ControlDur.ir
+      // lagValueN.pow(lagSteps) = -60 dB = 0.001
+      // lagValueN.pow(lagTime / ControlDur.ir) = -60 dB = 0.001
+      // lagValueN = 0.001.pow(ControlDur.ir / lagTime)
+
+      // val lagTime       = 1.0
+      val lagValueN     = 0.99 // 0.001.pow(ControlDur.ir / lagTime)
+      val lagValue      = 1.0 - lagValueN
+
       // for each frequency, find the best past match
       val noFounds = (0 until numTrajectories).map { tIdx =>
         val fIn         = freqIn \ tIdx
@@ -154,11 +163,17 @@ object Voices2 {
 
         val bestMask    = voiceNos sig_== bestIdx
         activated      |= bestMask
-        val bestMaskN   = !bestMask
-        voiceFreq       = voiceFreq * bestMaskN + fIn * bestMask
-        voiceAmp        = voiceAmp  * bestMaskN + aIn * bestMask
+//        val bestMaskN   = !bestMask
+//        voiceFreq       = voiceFreq * bestMaskN + fIn * bestMask
+//        voiceAmp        = voiceAmp  * bestMaskN + aIn * bestMask
+        val bestMaskLag  = bestMask * lagValue
+        val bestMaskLagN = (!bestMask).max(lagValueN)
 
-//        Trace(bestIdx, s"m-match $tIdx")
+        // this technique is ok for amplitude but not frequency
+        voiceFreq       = voiceFreq * bestMaskLagN + fIn * bestMaskLag
+        voiceAmp        = voiceAmp  * bestMaskLagN + aIn * bestMaskLag
+
+        //        Trace(bestIdx, s"m-match $tIdx")
 
         bestIdx sig_== -1
       }
@@ -184,7 +199,7 @@ object Voices2 {
 
       // ---- voice generation ----
       val voiceEnv      = Env.asr(attack = egAtk, release = egRls)
-      val voiceEG       = EnvGen.ar(voiceEnv, gate = activated, levelScale = voiceAmp)
+      val voiceEG       = EnvGen.ar(voiceEnv, gate = activated)
 
       //      val osc = SinOsc.ar(voiceFreq) * voiceEG / numVoices
       //      Out.ar(0, Mix(Pan2.ar(osc, Seq.tabulate(numVoices)(i => (i % 2) * 2 - 1))))
@@ -201,8 +216,9 @@ object Voices2 {
 
       // ---- sound generation ----
 
-      val osc = Mix(Pan2.ar(SinOsc.ar(voiceFreq) * voiceEG, (0 until numVoices).map(_.linlin(0, numVoices - 1, -1, 1))))
-      Out.ar(0, Limiter.ar(osc))
+      val sines = SinOsc.ar(voiceFreq) * voiceEG * voiceAmp
+      val mix   = Mix(Pan2.ar(sines, (0 until numVoices).map(_.linlin(0, numVoices - 1, -1, 1))))
+      Out.ar(0, Limiter.ar(mix))
     }
 
     df.play(s)
