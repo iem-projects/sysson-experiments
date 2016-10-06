@@ -145,9 +145,8 @@ object Voices2 {
       // lagValueN.pow(lagTime / ControlDur.ir) = -60 dB = 0.001
       // lagValueN = 0.001.pow(ControlDur.ir / lagTime)
 
-      // val lagTime       = 1.0
-      val lagValueN     = 0.99 // 0.001.pow(ControlDur.ir / lagTime)
-      val lagValue      = 1.0 - lagValueN
+//      val lagValueN     = 0.99 // 0.001.pow(ControlDur.ir / lagTime)
+//      val lagValue      = 1.0 - lagValueN
 
       // for each frequency, find the best past match
       val noFounds = (0 until numTrajectories).map { tIdx =>
@@ -163,15 +162,15 @@ object Voices2 {
 
         val bestMask    = voiceNos sig_== bestIdx
         activated      |= bestMask
-//        val bestMaskN   = !bestMask
-//        voiceFreq       = voiceFreq * bestMaskN + fIn * bestMask
-//        voiceAmp        = voiceAmp  * bestMaskN + aIn * bestMask
-        val bestMaskLag  = bestMask * lagValue
-        val bestMaskLagN = (!bestMask).max(lagValueN)
+        val bestMaskN   = !bestMask
+        voiceFreq       = voiceFreq * bestMaskN + fIn * bestMask
+        voiceAmp        = voiceAmp  * bestMaskN + aIn * bestMask
+//        val bestMaskLag  = bestMask * lagValue
+//        val bestMaskLagN = (!bestMask).max(lagValueN)
 
-        // this technique is ok for amplitude but not frequency
-        voiceFreq       = voiceFreq * bestMaskLagN + fIn * bestMaskLag
-        voiceAmp        = voiceAmp  * bestMaskLagN + aIn * bestMaskLag
+//        // this technique is ok for amplitude but not frequency
+//        voiceFreq       = voiceFreq * bestMaskLagN + fIn * bestMaskLag
+//        voiceAmp        = voiceAmp  * bestMaskLagN + aIn * bestMaskLag
 
         //        Trace(bestIdx, s"m-match $tIdx")
 
@@ -216,8 +215,13 @@ object Voices2 {
 
       // ---- sound generation ----
 
-      val sines = SinOsc.ar(voiceFreq) * voiceEG * voiceAmp
-      val mix   = Mix(Pan2.ar(sines, (0 until numVoices).map(_.linlin(0, numVoices - 1, -1, 1))))
+      val lagTime   = 1.0
+      // gate so attack doesn't lag
+      val lagTimeGt = (activated sig_== Delay1.kr(activated)) * lagTime
+      val ampLag    = Lag.ar(voiceAmp , time = lagTimeGt)
+      val freqLag   = Lag.ar(voiceFreq, time = lagTimeGt)
+      val sines     = SinOsc.ar(freqLag) * voiceEG * ampLag
+      val mix       = Mix(Pan2.ar(sines, (0 until numVoices).map(_.linlin(0, numVoices - 1, -1, 1))))
       Out.ar(0, Limiter.ar(mix))
     }
 
