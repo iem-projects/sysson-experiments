@@ -183,7 +183,7 @@ object Voices2 {
       }
 
       // ---- voice generation ----
-      val voiceEnv      = Env.asr(attack = egAtk, release = egRls, curve = Curve.lin)
+      val voiceEnv      = Env.asr(attack = egAtk, release = egRls)
       val voiceEG       = EnvGen.ar(voiceEnv, gate = activated, levelScale = voiceAmp)
 
       //      val osc = SinOsc.ar(voiceFreq) * voiceEG / numVoices
@@ -196,7 +196,7 @@ object Voices2 {
 //      Trace(voiceFreq , "vc-freq-out")
 //      Trace(voiceOnOff, "vc-on  -out")
 
-      val stateOutKr  = Flatten(voiceFreq ++ voiceOnOff)
+      val stateOutKr  = Flatten(voiceFreq ++ voiceAmp ++ voiceOnOff)
       LocalOut.kr(stateOutKr)
 
       // ---- sound generation ----
