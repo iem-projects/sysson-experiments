@@ -1,3 +1,17 @@
+/*
+ *  ScenarioMono
+ *  (SysSon-Experiments)
+ *
+ *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
+ *  Written by Hanns Holger Rutz.
+ *
+ *	This software is published under the GNU General Public License v3+
+ *
+ *
+ *	For further information, please contact Hanns Holger Rutz at
+ *	contact@sciss.de
+ */
+
 package at.iem.sysson.experiments
 
 import at.iem.scalacollider.ScalaColliderDOT
