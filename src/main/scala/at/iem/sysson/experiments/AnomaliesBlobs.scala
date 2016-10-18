@@ -81,6 +81,7 @@ object AnomaliesBlobs {
       img
     }
 
+    // XXX TODO --- should verify if we have [time][alt] or [alt][time]
     def mkImageGray(data: Vec[Double], lo: Double, hi: Double, pad: Boolean): BufferedImage = {
       val width   = timeRange.size + (if (pad) 2 else 0)
       val height  = altRange.size  + (if (pad) 2 else 0)
@@ -245,8 +246,10 @@ object AnomaliesBlobs {
       val altDimValues  = varAlt.read()
       val altDimSz      = altDimValues.size.toInt
       val outDims = Vector(
-        NetCdfFileUtil.Create(blobName, units = None         , values = blobDimValues),
-        NetCdfFileUtil.Create(timeName, units = varTime.units, values = timeDimValues)
+        NetCdfFileUtil.Create(timeName, units = varTime.units, values = timeDimValues),
+        NetCdfFileUtil.Keep  (lonName),
+        NetCdfFileUtil.Keep  (latName),
+        NetCdfFileUtil.Create(blobName, units = None         , values = blobDimValues)
       )
 
       /*
@@ -261,7 +264,8 @@ object AnomaliesBlobs {
        */
       val proc = NetCdfFileUtil.transform(fNC, out = fOut, varName = varName, inDims = inDims, outDimsSpec = outDims) {
         case (origin, arr) =>
-          assert(arr.shape == Vector(altDimSz, timeDimSz), arr.shape.mkString("[", "][", "]"))
+          assert(arr.shape == Vector(timeDimSz, altDimSz),
+            s"Shape seen: ${arr.shape.mkString("[", "][", "]")}; expected: [$timeDimSz][$altDimSz]")
           ma2.Array.factory(ma2.DataType.FLOAT, Array[Int](blobDimSz, timeDimSz))
       }
 
