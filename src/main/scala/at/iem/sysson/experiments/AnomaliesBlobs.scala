@@ -15,8 +15,8 @@
 package at.iem.sysson
 package experiments
 
-import java.awt.{BasicStroke, Color, RenderingHints}
-import java.awt.geom.{Path2D, Rectangle2D}
+import java.awt.{BasicStroke, Color, RenderingHints, Shape}
+import java.awt.geom.{AffineTransform, Area, Path2D, Rectangle2D}
 import java.awt.image.BufferedImage
 
 import blobDetection.BlobDetection
@@ -133,7 +133,42 @@ object AnomaliesBlobs {
       val minHeight = 10.0 / height
       val blobs     = Vector.tabulate(bd.getBlobNb)(bd.getBlob).filter(b => b.w >= minWidth && b.h >= minHeight)
 
-      
+      val blobShapes  = blobs.map { b =>
+        val p = new Path2D.Double
+        var m = 0
+        while (m < b.getEdgeNb) {
+          val eA = b.getEdgeVertexA(m)
+          val eB = b.getEdgeVertexB(m)
+          if (eA != null && eB !=null) {
+            if (m == 0) {
+              val x = eA.x // * pw
+              val y = eA.y // * ph
+              p.moveTo(x, y)
+            } else {
+              val x = eB.x // * pw
+              val y = eB.y // * ph
+              p.lineTo(x, y)
+            }
+          }
+          m += 1
+        }
+        p.closePath()
+        p
+      }
+
+      val blobUnions = blobShapes.map { sh =>
+        val scale = AffineTransform.getScaleInstance(width, height)
+        val shS   = scale.createTransformedShape(sh)
+        val r     = new Rectangle2D.Double
+        val out   = new Area
+        for (x <- timeRange.indices) {
+          r.setRect(x + 1, 0, 1, height)
+          val a = new Area(shS)
+          a.intersect(new Area(r))
+          out.add(new Area(a.getBounds2D))
+        }
+        out: Shape
+      }
 
       new Frame {
         title = s"range $lo-$hi; nb = ${blobs.size}"
@@ -156,47 +191,28 @@ object AnomaliesBlobs {
             // g.drawImage(img, 0, 0, peer)
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING  , RenderingHints.VALUE_ANTIALIAS_ON)
             g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
-            var n = 0
-            while (n < blobs.size) {
-              val b = blobs(n) // bd.getBlob(n)
-              // Edges
-              if (true /* drawEdges */) {
-                p.reset()
-                var m = 0
-                while (m < b.getEdgeNb) {
-                  val eA = b.getEdgeVertexA(m)
-                  val eB = b.getEdgeVertexB(m)
-                  if (eA != null && eB !=null) {
-                    if (m == 0) {
-                      val x = eA.x * pw
-                      val y = eA.y * ph
-                      p.moveTo(x, y)
-                    } else {
-                      val x = eB.x * pw
-                      val y = eB.y * ph
-                      p.lineTo(x, y)
-                    }
-                  }
-                  m += 1
-                }
-                p.closePath()
-                val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
-                // g.setColor(Color.green)
-                g.setColor(colr)
-                g.setStroke(strkThick)
-                g.draw(p)
-              }
 
-              // Blobs
-              if (false /* drawBlobs */) {
-                g.setColor(Color.red)
-                g.setStroke(strkNorm)
-                r.setRect(b.xMin * pw, b.yMin * ph, b.w * pw, b.h * ph)
-                g.draw(r)
-              }
+            // val atScale = AffineTransform.getScaleInstance(pw, ph)
+            val atScale = AffineTransform.getScaleInstance(pw.toDouble / width, ph.toDouble / height)
 
-              n += 1
+            blobUnions /* blobShapes */.zipWithIndex.foreach { case (sh, n) =>
+              val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
+              // g.setColor(Color.green)
+              val shS = atScale.createTransformedShape(sh)
+              g.setColor(colr)
+              g.setStroke(strkThick)
+              g.draw(shS)
             }
+
+//              // Blobs
+//              if (false /* drawBlobs */) {
+//                g.setColor(Color.red)
+//                g.setStroke(strkNorm)
+//                r.setRect(b.xMin * pw, b.yMin * ph, b.w * pw, b.h * ph)
+//                g.draw(r)
+//              }
+//
+//              n += 1
           }
         }
         pack().centerOnScreen()
