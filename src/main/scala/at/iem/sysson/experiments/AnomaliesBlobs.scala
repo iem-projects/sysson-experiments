@@ -25,9 +25,10 @@ import de.sciss.file._
 import de.sciss.numbers
 import ucar.ma2
 
+import scala.annotation.tailrec
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.swing.{Component, Dimension, Frame, Graphics2D, Swing}
+import scala.swing.{Component, Dimension, Frame, Graphics2D, Rectangle, Swing}
 
 object AnomaliesBlobs {
   def main(args: Array[String]): Unit = {
@@ -121,21 +122,98 @@ object AnomaliesBlobs {
 //        }
 //      }
 //    }
+    
+    trait BlobLike {
+      def blobLeft    : Int
+      def blobTop     : Int
+      def blobWidth   : Int
+      def blobHeight  : Int
+//      def blobMean    : Double
+//      def blobStdDev  : Double
+//      def blobCenterX : Double
+//      def blobCenterY : Double
 
-    object BlobVector {
-      val invalid = BlobVector(valid = false, 0, 0, 0, 0, 0, 0, 0, 0)
+      def blobSize    : Int = blobWidth * blobHeight
     }
-    case class BlobVector(
-      valid      : Boolean,
-      low        : Double,
-      high       : Double,
-      centroid   : Double,
-      vEnergy    : Double,
-      boxEnergy  : Double,
+
+    case class BlobInput(
+      blobLeft    : Int,
+      blobTop     : Int,
+      blobWidth   : Int,
+      blobHeight  : Int,
+//      blobMean    : Double,
+//      blobStdDev  : Double,
+//      blobCenterX : Double,
+//      blobCenterY : Double,
+      shape       : Area
+    ) extends BlobLike {
+
+      def toSlice(
+        id          : Int,
+        blobMean    : Double,
+        blobStdDev  : Double,
+        blobCenterX : Double,
+        blobCenterY : Double,
+        boxLeft     : Int,
+        boxTop      : Int,
+        boxWidth    : Int,
+        boxHeight   : Int,
+        boxMean     : Double,
+        boxStdDev   : Double,
+        boxCenterX  : Double,
+        boxCenterY  : Double,
+        sliceMean   : Double,
+        sliceStdDev : Double,
+        sliceCenter : Double
+     ): BlobSlice = new BlobSlice(
+        id          = id,
+        blobLeft    = blobLeft,
+        blobTop     = blobTop,
+        blobWidth   = blobWidth,
+        blobHeight  = blobHeight,
+        blobMean    = blobMean,
+        blobStdDev  = blobStdDev,
+        blobCenterX = blobCenterX,
+        blobCenterY = blobCenterY,
+        boxLeft     = boxLeft,
+        boxTop      = boxTop,
+        boxWidth    = boxWidth,
+        boxHeight   = boxHeight,
+        boxMean     = boxMean,
+        boxStdDev   = boxStdDev,
+        boxCenterX  = boxCenterX,
+        boxCenterY  = boxCenterY,
+        sliceMean   = sliceMean,
+        sliceStdDev = sliceStdDev,
+        sliceCenter = sliceCenter
+      )
+    }
+
+    object BlobSlice {
+      lazy val invalid = BlobSlice(id = -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    }
+    case class BlobSlice(
+      id         : Int,
+      blobLeft   : Int,
+      blobTop    : Int,
+      blobWidth  : Int,
+      blobHeight : Int,
+      blobMean   : Double,
+      blobStdDev : Double,
+      blobCenterX: Double,
+      blobCenterY: Double,
+      boxLeft    : Int,
+      boxTop     : Int,
       boxWidth   : Int,
-      width      : Int,
-      height     : Double
-    )
+      boxHeight  : Int,
+      boxMean    : Double,
+      boxStdDev  : Double,
+      boxCenterX : Double,
+      boxCenterY : Double,
+      sliceMean  : Double,
+      sliceStdDev: Double,
+      sliceCenter: Double
+    ) extends BlobLike
 
     def mkFrame(img: BufferedImage, title0: String, blobUnions: Vec[Shape]): Unit = {
       val width   = img.getWidth
@@ -190,7 +268,7 @@ object AnomaliesBlobs {
 
     val maxOverlaps = 4 // 8 // 6 // 2
 
-    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false): Vec[Vec[BlobVector]] = {
+    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false): Vec[Vec[BlobSlice]] = {
       val lo      = 0.0               // XXX TODO --- make user selectable
       val hi      = 3.5               // XXX TODO --- make user selectable
       val width   = timeSize + 2
@@ -229,19 +307,70 @@ object AnomaliesBlobs {
         p
       }
 
-      lazy val blobUnions = blobShapes.map { sh =>
-        val scale = AffineTransform.getScaleInstance(width, height)
-        val shS   = scale.createTransformedShape(sh)
-        val r     = new Rectangle2D.Double
-        val out   = new Area
-        for (x <- 0 until timeSize) {
-          r.setRect(x + 1, 0, 1, height)
-          val a = new Area(shS)
+      val blobRasterAndSizes: Vec[BlobInput] = blobShapes.map { sh =>
+        val scale   = AffineTransform.getScaleInstance(width, height)
+        val shS     = scale.createTransformedShape(sh)
+        val r       = new Rectangle
+        val out     = new Area
+//        var size    = 0
+//        var sum     = 0.0
+//        var sumCnt  = 0
+        val br      = shS.getBounds
+        val t0      = br.x - 1
+        val t1      = t0 + br.width
+
+        for (timeIdx <- t0 until t1) {
+          r.x       = timeIdx + 1
+          r.y       = 0
+          r.width   = 1
+          r.height  = height
+          val a     = new Area(shS)
           a.intersect(new Area(r))
-          out.add(new Area(a.getBounds2D))
+          val b     = a.getBounds2D
+//          assert(b.width == 1, s"b = $b; in = $r; b2 = ${a.getBounds2D}")
+//          size     += b.height
+          out.add(new Area(b))
+//          val y0  = math.max(0, b.y - 1)
+//          val y1  = y0 + math.min(altSize, b.height)
+//          for (y <- y0 until y1) {
+//            val ta = data(timeIdx * altSize + y)
+//            sum += ta
+//          }
         }
-        out: Shape
+        val ri = out.getBounds
+        assert(ri == br)
+
+        val blobLeft    = math.max(0, ri.x - 1)
+        val blobTop     = math.max(0, ri.y - 1)
+        val blobWidth   = math.min(timeSize - blobLeft, ri.width)
+        val blobHeight  = math.min(altSize  - blobTop , ri.height)
+
+        BlobInput(
+          blobLeft    = blobLeft,
+          blobTop     = blobTop,
+          blobWidth   = blobWidth,
+          blobHeight  = blobHeight,
+          shape       = out
+        )
       }
+
+      // call with shapes sorted by size in ascending order!
+      @tailrec def filterOverlaps(rem: Vec[BlobInput], out: Vec[BlobInput]): Vec[BlobInput] =
+        rem match {
+          case head +: tail =>
+            val numOverlap = tail.count { a =>
+              val i = new Area(a.shape)
+              i.intersect(head.shape)
+              !i.isEmpty
+            }
+            val outNext = if (numOverlap > maxOverlaps) out else out :+ head
+            filterOverlaps(rem = tail, out = outNext)
+
+          case _ => out
+        }
+
+      val blobFlt = filterOverlaps(blobRasterAndSizes.sortBy(_.blobSize), out = Vector.empty)
+          .sortBy(b => (b.blobLeft, b.blobTop))
 
 //      val numOverlaps = blobUnions.tails.map {
 //        case head +: tail =>
@@ -255,32 +384,31 @@ object AnomaliesBlobs {
 //      }
 
       if (openFrame) Swing.onEDT {
+        val blobUnions = blobFlt.map(_.shape)
         mkFrame(img, title0 = "blobs", blobUnions = blobUnions)
       }
 
-      // XXX TODO ---
-      // filter blobs so that at any one point
-      // at maximum `maxOverlaps` exists
-      // (probably taking the largest blobs when having to filter)
 
-      val blobVec = (0 until timeSize).map { timeIdx =>
-        blobShapes.map { sh =>
-          val scale = AffineTransform.getScaleInstance(width, height)
-          val shS   = scale.createTransformedShape(sh)
-          val r     = new Rectangle2D.Double
-          val out   = new Area
-          for (x <- 0 until timeSize) {
-            r.setRect(x + 1, 0, 1, height)
-            val a = new Area(shS)
-            a.intersect(new Area(r))
-            out.add(new Area(a.getBounds2D))
-          }
-          BlobVector(valid = true, low = ???, high = ???, centroid = ???, vEnergy = ???, boxEnergy = ???, boxWidth = ???,
-            width = ???, height = ???)
-        }
-      }
 
-      ???
+
+//      val blobVec = (0 until timeSize).map { timeIdx =>
+//        blobShapes.map { sh =>
+//          val scale = AffineTransform.getScaleInstance(width, height)
+//          val shS   = scale.createTransformedShape(sh)
+//          val r     = new Rectangle2D.Double
+//          val out   = new Area
+//          for (x <- 0 until timeSize) {
+//            r.setRect(x + 1, 0, 1, height)
+//            val a = new Area(shS)
+//            a.intersect(new Area(r))
+//            out.add(new Area(a.getBounds2D))
+//          }
+//          BlobVector(valid = true, low = ???, high = ???, centroid = ???, vEnergy = ???, boxEnergy = ???, boxWidth = ???,
+//            width = ???, height = ???)
+//        }
+//      }
+
+      Vector.empty // ???
     }
 
     def blobTest(): Unit = {
@@ -313,7 +441,7 @@ object AnomaliesBlobs {
       val inDims        = Vector(timeName, altName)
 
       val blobName      = "blobs"
-      val blobVecSize   = BlobVector.invalid.productArity
+      val blobVecSize   = BlobSlice.invalid.productArity
       val blobDimValues = ma2.Array.factory((0 until (blobVecSize * maxOverlaps)).toArray)
       val blobDimSz     = blobDimValues.size.toInt
       val varTime       = fNC.variableMap(timeName)
