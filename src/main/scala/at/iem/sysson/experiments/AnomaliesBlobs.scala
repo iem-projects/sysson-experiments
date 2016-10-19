@@ -133,6 +133,8 @@ object AnomaliesBlobs {
 //      def blobCenterX : Double
 //      def blobCenterY : Double
 
+      def blobRight   : Int = blobLeft  + blobWidth
+      def blobBottom  : Int = blobTop   + blobHeight
       def blobSize    : Int = blobWidth * blobHeight
     }
 
@@ -149,11 +151,11 @@ object AnomaliesBlobs {
     ) extends BlobLike {
 
       def toSlice(
-        id          : Int,
-        blobMean    : Double,
-        blobStdDev  : Double,
-        blobCenterX : Double,
-        blobCenterY : Double,
+//        id          : Int,
+//        blobMean    : Double,
+//        blobStdDev  : Double,
+//        blobCenterX : Double,
+//        blobCenterY : Double,
         boxLeft     : Int,
         boxTop      : Int,
         boxWidth    : Int,
@@ -166,15 +168,15 @@ object AnomaliesBlobs {
         sliceStdDev : Double,
         sliceCenter : Double
      ): BlobSlice = new BlobSlice(
-        id          = id,
-        blobLeft    = blobLeft,
-        blobTop     = blobTop,
-        blobWidth   = blobWidth,
-        blobHeight  = blobHeight,
-        blobMean    = blobMean,
-        blobStdDev  = blobStdDev,
-        blobCenterX = blobCenterX,
-        blobCenterY = blobCenterY,
+//        id          = id,
+//        blobLeft    = blobLeft,
+//        blobTop     = blobTop,
+//        blobWidth   = blobWidth,
+//        blobHeight  = blobHeight,
+//        blobMean    = blobMean,
+//        blobStdDev  = blobStdDev,
+//        blobCenterX = blobCenterX,
+//        blobCenterY = blobCenterY,
         boxLeft     = boxLeft,
         boxTop      = boxTop,
         boxWidth    = boxWidth,
@@ -190,18 +192,9 @@ object AnomaliesBlobs {
     }
 
     object BlobSlice {
-      lazy val invalid = BlobSlice(id = -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+      lazy val numFields: Int = BlobSlice(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0).productArity
     }
     case class BlobSlice(
-      id         : Int,
-      blobLeft   : Int,
-      blobTop    : Int,
-      blobWidth  : Int,
-      blobHeight : Int,
-      blobMean   : Double,
-      blobStdDev : Double,
-      blobCenterX: Double,
-      blobCenterY: Double,
       boxLeft    : Int,
       boxTop     : Int,
       boxWidth   : Int,
@@ -213,7 +206,13 @@ object AnomaliesBlobs {
       sliceMean  : Double,
       sliceStdDev: Double,
       sliceCenter: Double
-    ) extends BlobLike
+    )
+
+    object Blob {
+      lazy val numBaseFields: Int = Blob(0, 0, 0, 0, 0, Array.empty).productArity
+    }
+    final case class Blob(id: Int, blobLeft: Int, blobTop: Int, blobWidth: Int, blobHeight: Int,
+                          slices: Array[BlobSlice]) extends BlobLike
 
     def mkFrame(img: BufferedImage, title0: String, blobUnions: Vec[Shape]): Unit = {
       val width   = img.getWidth
@@ -315,11 +314,15 @@ object AnomaliesBlobs {
 //        var size    = 0
 //        var sum     = 0.0
 //        var sumCnt  = 0
-        val br      = shS.getBounds
-        val t0      = br.x - 1
-        val t1      = t0 + br.width
+        val br          = shS.getBounds
+        val blobLeft    = math.max(0, br.x - 1)
+        val blobWidth   = math.min(timeSize - blobLeft, br.width)
+        val blobRight   = blobLeft + blobWidth
+        val blobTop     = math.max(0, br.y - 1)
+        val blobHeight  = math.min(altSize  - blobTop , br.height)
+        val blobBottom  = blobTop + blobHeight
 
-        for (timeIdx <- t0 until t1) {
+        for (timeIdx <- blobLeft until blobRight) {
           r.x       = timeIdx + 1
           r.y       = 0
           r.width   = 1
@@ -336,14 +339,19 @@ object AnomaliesBlobs {
 //            val ta = data(timeIdx * altSize + y)
 //            sum += ta
 //          }
+          val altTop  = math.max(blobTop   , math.floor(b.getMinY).toInt)
+          val altStop = math.min(blobBottom, math.ceil (b.getMaxY).toInt)
+          var altIdx  = altTop
+          var sum = 0.0
+          while (altIdx < altStop) {
+            val ta = data(timeIdx * altSize + altIdx)
+            sum    += ta
+            altIdx += 1
+          }
+          val sliceMean = sum / (altStop - altTop)
         }
         val ri = out.getBounds
         assert(ri == br)
-
-        val blobLeft    = math.max(0, ri.x - 1)
-        val blobTop     = math.max(0, ri.y - 1)
-        val blobWidth   = math.min(timeSize - blobLeft, ri.width)
-        val blobHeight  = math.min(altSize  - blobTop , ri.height)
 
         BlobInput(
           blobLeft    = blobLeft,
@@ -388,8 +396,59 @@ object AnomaliesBlobs {
         mkFrame(img, title0 = "blobs", blobUnions = blobUnions)
       }
 
+//      val blobs = blobFlt.map { in =>
+//        var timeIdx   = in.blobLeft
+//        val slices    = new Array[BlobSlice](in.blobWidth)
+//        var sliceIdx  = 0
+//        while (sliceIdx < slices.length) {
+//          var sum     = 0.0
+//          var altIdx  = in.blobTop
+//          val altStop = in.blobBottom
+//          while (altIdx < altStop) {
+//            val ta = data(timeIdx * altSize + altIdx)
+//            sum += ta
+//            altIdx += 1
+//          }
+//          val sliceMean = sum / in.bl
+//
+//          slices(sliceIdx) = BlobSlice(
+//            boxLeft     = ???,
+//            boxTop      = ???,
+//            boxWidth    = ???,
+//            boxHeight   = ???,
+//            boxMean     = ???,
+//            boxStdDev   = ???,
+//            boxCenterX  = ???,
+//            boxCenterY  = ???,
+//            sliceMean   = ???,
+//            sliceStdDev = ???,
+//            sliceCenter = ???
+//          )
+//
+//          sliceIdx += 1
+//          timeIdx  += 1
+//        }
+//
+//        for (timeIdx <- in.blobLeft until in.blobRight) yield {
+//
+//        }
+//      }
 
+      val blobDimSz = maxOverlaps * BlobSlice.numFields
+      val res       = Array.ofDim[Float](timeSize, blobDimSz)
 
+//      @tailrec def mkSlices(timeIdx: Int, active: Vec[BlobSlice], rem: Vec[BlobInput]): Unit =
+//        if (timeIdx < timeSize) {
+//          val active1 = active.filter(_.blobRight == timeIdx)
+//          val (activeAdd, remRem) = rem.partition(_.blobLeft == timeIdx)
+//          val active2 = active1 ++ activeAdd
+//
+//          mkSlices(timeIdx + 1, active = ???, rem = remRem)
+//        } else {
+//          assert(rem.isEmpty)
+//        }
+//
+//      mkSlices(0, Vector.empty, blobFlt)
 
 //      val blobVec = (0 until timeSize).map { timeIdx =>
 //        blobShapes.map { sh =>
@@ -441,7 +500,7 @@ object AnomaliesBlobs {
       val inDims        = Vector(timeName, altName)
 
       val blobName      = "blobs"
-      val blobVecSize   = BlobSlice.invalid.productArity
+      val blobVecSize   = Blob.numBaseFields + BlobSlice.numFields
       val blobDimValues = ma2.Array.factory((0 until (blobVecSize * maxOverlaps)).toArray)
       val blobDimSz     = blobDimValues.size.toInt
       val varTime       = fNC.variableMap(timeName)
