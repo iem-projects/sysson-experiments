@@ -519,7 +519,7 @@ object AnomaliesBlobs {
 
       @tailrec def mkArray(timeIdx: Int, activeBefore: Vec[Blob], rem: Vec[Blob]): Unit =
         if (timeIdx < timeSize) {
-          val active1 = activeBefore.filter(_.blobRight == timeIdx)
+          val active1 = activeBefore.filterNot(_.blobRight == timeIdx)
           val (activeAdd, remRem) = rem.partition(_.blobLeft == timeIdx)
           val activeNow = active1 ++ activeAdd
           val out       = res(timeIdx)
@@ -637,12 +637,17 @@ object AnomaliesBlobs {
         case (origin, arr) =>
           assert(arr.shape == Vector(timeDimSz, altRange.size /* altDimSz */),
             s"Shape seen: ${arr.shape.mkString("[", "][", "]")}; expected: [$timeDimSz][${altRange.size /* altDimSz */}]")
-          // arr.transpose()
           val data      = arr.double1D
           // val openFrame = origin == Vector(3, 17) || origin == Vector(0, 0)
           val arrOut    = calcBlobs(data, timeSize = timeDimSz, altSize = altRange.size /* altDimSz */ /* , openFrame = openFrame */)
-          // ma2.Array.factory(ma2.DataType.FLOAT, Array[Int](blobDimSz, timeDimSz))
-          ma2.Array.factory(arrOut)
+          // XXX TODO --- here's the problem: `transformSelection` creates
+          // the new variable with the same data type as the input variable.
+          // This may be float or double in our case. If we write float and the
+          // variable is double, NetCDF automatically converts the type. We
+          // should make the target type configurable in SysSon.
+          val res = ma2.Array.factory(arrOut)
+//          assert(res.isFloat)
+          res
       }
 
       import scala.concurrent.ExecutionContext.Implicits.global
