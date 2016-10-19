@@ -210,11 +210,22 @@ object AnomaliesBlobs {
     ) {
 
       def boxBottom: Int = boxTop + boxHeight
+
+      def toArray: Array[Float] =
+        Array[Float](boxTop, boxHeight, sliceMean.toFloat, sliceStdDev.toFloat, sliceCenter.toFloat)
     }
 
     object Blob {
-      lazy val numBaseFields: Int = Blob(0, 0, 0, 0, 0, Array.empty).productArity
+      lazy val numBaseFields: Int = Blob(0, 0, 0, 0, 0, Array.empty).productArity - 1
+      lazy val totalNumField: Int = numBaseFields + BlobSlice.numFields
     }
+    /** @param id           unique blob identifier, positive. if zero, blob data is invalid
+      * @param blobLeft     blob beginning in time frames ("horizontally")
+      * @param blobTop      blob beginning within time slice (vertically)
+      * @param blobWidth    blob duration in time frames
+      * @param blobHeight   blob extent within time slice
+      * @param slices       blob form
+      */
     final case class Blob(id: Int, blobLeft: Int, blobTop: Int, blobWidth: Int, blobHeight: Int,
                           slices: Array[BlobSlice]) extends BlobLike {
 
@@ -233,6 +244,14 @@ object AnomaliesBlobs {
           }
           found
         }
+
+      def toArray(sliceIdx: Int): Array[Float] =
+        Array[Float](id, blobLeft, blobTop, blobWidth, blobHeight) ++ slices(sliceIdx).toArray
+
+      def fillSlice(sliceIdx: Int, out: Array[Float], outOff: Int): Unit = {
+        val data = toArray(sliceIdx)
+        System.arraycopy(data, 0, out, outOff, data.length)
+      }
     }
 
     def mkFrame(img: BufferedImage, title0: String, blobUnions: Vec[Shape]): Unit = {
@@ -288,7 +307,7 @@ object AnomaliesBlobs {
 
     val maxOverlaps = 4 // 8 // 6 // 2
 
-    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false): Array[Array[Float]] = {
+    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int /* , openFrame: Boolean = false */): Array[Array[Float]] = {
       val lo      = 0.0               // XXX TODO --- make user selectable
       val hi      = 3.5               // XXX TODO --- make user selectable
       val width   = timeSize + 2
@@ -310,7 +329,7 @@ object AnomaliesBlobs {
         while (m < b.getEdgeNb) {
           val eA = b.getEdgeVertexA(m)
           val eB = b.getEdgeVertexB(m)
-          if (eA != null && eB !=null) {
+          if (eA != null && eB != null) {
             if (m == 0) {
               val x = eA.x // * pw
               val y = eA.y // * ph
@@ -436,7 +455,7 @@ object AnomaliesBlobs {
           case _ => out
         }
 
-      val blobFlt = filterOverlaps(blobsAll.sortBy(_.blobSize), out = Vector.empty, id = 0)
+      val blobFlt = filterOverlaps(blobsAll.sortBy(_.blobSize), out = Vector.empty, id = 1)
           .sortBy(b => (b.blobLeft, b.blobTop))
 
 //      val numOverlaps = blobUnions.tails.map {
@@ -493,21 +512,39 @@ object AnomaliesBlobs {
 //        }
 //      }
 
-      val blobDimSz = maxOverlaps * BlobSlice.numFields
+      val blobDimSz = Blob.totalNumField * maxOverlaps
       val res       = Array.ofDim[Float](timeSize, blobDimSz)
 
-//      @tailrec def mkSlices(timeIdx: Int, active: Vec[BlobSlice], rem: Vec[BlobInput]): Unit =
-//        if (timeIdx < timeSize) {
-//          val active1 = active.filter(_.blobRight == timeIdx)
-//          val (activeAdd, remRem) = rem.partition(_.blobLeft == timeIdx)
-//          val active2 = active1 ++ activeAdd
-//
-//          mkSlices(timeIdx + 1, active = ..., rem = remRem)
-//        } else {
-//          assert(rem.isEmpty)
-//        }
-//
-//      mkSlices(0, Vector.empty, blobFlt)
+      val idIndices = 0 until blobDimSz by Blob.totalNumField
+
+      @tailrec def mkArray(timeIdx: Int, activeBefore: Vec[Blob], rem: Vec[Blob]): Unit =
+        if (timeIdx < timeSize) {
+          val active1 = activeBefore.filter(_.blobRight == timeIdx)
+          val (activeAdd, remRem) = rem.partition(_.blobLeft == timeIdx)
+          val activeNow = active1 ++ activeAdd
+          val out       = res(timeIdx)
+          val (activeOld, activeNew) = activeNow.partition(activeBefore.contains)
+          if (activeOld.nonEmpty) {
+            val outBefore = res(timeIdx - 1)
+            activeOld.foreach { blob =>
+              val sliceIdx  = timeIdx - blob.blobLeft
+              val outOff    = idIndices.find(idx => outBefore(idx) == blob.id).get  // same slot as before
+              blob.fillSlice(sliceIdx = sliceIdx, out = out, outOff = outOff)
+            }
+          }
+          if (activeNew.nonEmpty) {
+            activeNew.foreach { blob =>
+              val sliceIdx  = timeIdx - blob.blobLeft
+              val outOff    = idIndices.find(idx => out(idx) == 0).get  // empty slot
+              blob.fillSlice(sliceIdx = sliceIdx, out = out, outOff = outOff)
+            }
+          }
+          mkArray(timeIdx + 1, activeBefore = activeNow, rem = remRem)
+        } else {
+          assert(rem.isEmpty)
+        }
+
+      mkArray(0, Vector.empty, blobFlt)
 
 //      val blobVec = (0 until timeSize).map { timeIdx =>
 //        blobShapes.map { sh =>
@@ -559,9 +596,9 @@ object AnomaliesBlobs {
       val inDims        = Vector(timeName, altName)
 
       val blobName      = "blobs"
-      val blobVecSize   = Blob.numBaseFields + BlobSlice.numFields
-      val blobDimValues = ma2.Array.factory((0 until (blobVecSize * maxOverlaps)).toArray)
-      val blobDimSz     = blobDimValues.size.toInt
+      val blobDimSz     = Blob.totalNumField * maxOverlaps
+      // println(s"totalNumField =  ${Blob.totalNumField}")
+      val blobDimValues = ma2.Array.factory((0 until blobDimSz).toArray)
       val varTime       = fNC.variableMap(timeName)
       val timeDimValues = varTime.read()
       val timeDimSz     = timeDimValues.size.toInt
@@ -602,9 +639,10 @@ object AnomaliesBlobs {
             s"Shape seen: ${arr.shape.mkString("[", "][", "]")}; expected: [$timeDimSz][${altRange.size /* altDimSz */}]")
           // arr.transpose()
           val data      = arr.double1D
-          val openFrame = origin == Vector(3, 17) || origin == Vector(0, 0)
-          calcBlobs(data, timeSize = timeDimSz, altSize = altRange.size /* altDimSz */, openFrame = openFrame)
-          ma2.Array.factory(ma2.DataType.FLOAT, Array[Int](blobDimSz, timeDimSz))
+          // val openFrame = origin == Vector(3, 17) || origin == Vector(0, 0)
+          val arrOut    = calcBlobs(data, timeSize = timeDimSz, altSize = altRange.size /* altDimSz */ /* , openFrame = openFrame */)
+          // ma2.Array.factory(ma2.DataType.FLOAT, Array[Int](blobDimSz, timeDimSz))
+          ma2.Array.factory(arrOut)
       }
 
       import scala.concurrent.ExecutionContext.Implicits.global
