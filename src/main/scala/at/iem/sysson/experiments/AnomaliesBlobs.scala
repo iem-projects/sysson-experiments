@@ -122,6 +122,9 @@ object AnomaliesBlobs {
 //      }
 //    }
 
+    object BlobVector {
+      val invalid = BlobVector(valid = false, 0, 0, 0, 0, 0, 0, 0, 0)
+    }
     case class BlobVector(
       valid      : Boolean,
       low        : Double,
@@ -187,20 +190,20 @@ object AnomaliesBlobs {
 
     val maxOverlaps = 4 // 8 // 6 // 2
 
-    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false) = {
-      val lo      = 0.0
-      val hi      = 3.5
+    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false): Vec[Vec[BlobVector]] = {
+      val lo      = 0.0               // XXX TODO --- make user selectable
+      val hi      = 3.5               // XXX TODO --- make user selectable
       val width   = timeSize + 2
       val height  = altSize  + 2
       val img     = mkImageGray(data, timeSize = timeSize, altSize = altSize, lo = lo, hi = hi, pad = true)
       val bd      = new BlobDetection(width, height)
       val pixels  = img.getRGB(0, 0, width, height, null, 0, width)
       bd.setPosDiscrimination(true)
-      bd.setIsovalue(200f)
+      bd.setIsovalue(200f)            // XXX TODO --- make user selectable?
       bd.computeBlobs(pixels)
 
-      val minWidth  =  3.0 / width
-      val minHeight = 10.0 / height
+      val minWidth  =  3.0 / width    // XXX TODO --- make user selectable
+      val minHeight = 10.0 / height   // XXX TODO --- make user selectable
       val blobs     = Vector.tabulate(bd.getBlobNb)(bd.getBlob).filter(b => b.w >= minWidth && b.h >= minHeight)
 
       val blobShapes  = blobs.map { b =>
@@ -226,7 +229,7 @@ object AnomaliesBlobs {
         p
       }
 
-      val blobUnions = blobShapes.map { sh =>
+      lazy val blobUnions = blobShapes.map { sh =>
         val scale = AffineTransform.getScaleInstance(width, height)
         val shS   = scale.createTransformedShape(sh)
         val r     = new Rectangle2D.Double
@@ -255,7 +258,29 @@ object AnomaliesBlobs {
         mkFrame(img, title0 = "blobs", blobUnions = blobUnions)
       }
 
-      ()
+      // XXX TODO ---
+      // filter blobs so that at any one point
+      // at maximum `maxOverlaps` exists
+      // (probably taking the largest blobs when having to filter)
+
+      val blobVec = (0 until timeSize).map { timeIdx =>
+        blobShapes.map { sh =>
+          val scale = AffineTransform.getScaleInstance(width, height)
+          val shS   = scale.createTransformedShape(sh)
+          val r     = new Rectangle2D.Double
+          val out   = new Area
+          for (x <- 0 until timeSize) {
+            r.setRect(x + 1, 0, 1, height)
+            val a = new Area(shS)
+            a.intersect(new Area(r))
+            out.add(new Area(a.getBounds2D))
+          }
+          BlobVector(valid = true, low = ???, high = ???, centroid = ???, vEnergy = ???, boxEnergy = ???, boxWidth = ???,
+            width = ???, height = ???)
+        }
+      }
+
+      ???
     }
 
     def blobTest(): Unit = {
@@ -288,7 +313,7 @@ object AnomaliesBlobs {
       val inDims        = Vector(timeName, altName)
 
       val blobName      = "blobs"
-      val blobVecSize   = BlobVector(valid = false, 0, 0, 0, 0, 0, 0, 0, 0).productArity
+      val blobVecSize   = BlobVector.invalid.productArity
       val blobDimValues = ma2.Array.factory((0 until (blobVecSize * maxOverlaps)).toArray)
       val blobDimSz     = blobDimValues.size.toInt
       val varTime       = fNC.variableMap(timeName)
