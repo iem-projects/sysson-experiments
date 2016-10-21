@@ -15,7 +15,7 @@
 package at.iem.sysson
 package experiments
 
-import java.awt.geom.{AffineTransform, Area, Path2D}
+import java.awt.geom.{AffineTransform, Area, Line2D, Path2D}
 import java.awt.image.BufferedImage
 import java.awt.{BasicStroke, Color, RenderingHints, Shape}
 
@@ -28,13 +28,17 @@ import ucar.ma2
 import scala.annotation.tailrec
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.swing.{Component, Dimension, Frame, Graphics2D, Rectangle}
+import scala.swing.{Component, Dimension, Frame, Graphics2D, Rectangle, Swing}
 
 object AnomaliesBlobs {
   def main(args: Array[String]): Unit = {
     import Implicits._
 
     val fIn       = userHome / "sysson" / "nc" / "5x30-climatology_2001-05-01_2016-05-01_ta_anom2.nc"
+    val fOut      = userHome / "Documents" / "temp" / "test-blobs3.nc"
+    val altRange  = 210 to 360 // 390
+    val latRange  =  13 to  22
+
     val fNC       = openFile(fIn)
     val varName   = "Temperature"
     val lonName   = "Longitude"
@@ -254,7 +258,7 @@ object AnomaliesBlobs {
       }
     }
 
-    def mkFrame(img: BufferedImage, title0: String, blobUnions: Vec[Shape]): Unit = {
+    def mkFrame(img: BufferedImage, title0: String, blobs: Vec[Blob]): Unit = {
       val width   = img.getWidth
       val height  = img.getHeight
       new Frame {
@@ -268,8 +272,8 @@ object AnomaliesBlobs {
           override def paint(g: Graphics2D): Unit = {
             val pw = peer.getWidth
             val ph = peer.getHeight
-            // val sx = pw.toDouble/width
-            // val sy = ph.toDouble/height
+             val sx = pw.toDouble/width
+             val sy = ph.toDouble/height
             // g.scale(peer.getWidth.toDouble/width, peer.getHeight.toDouble/height)
             // g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
             g.drawImage(img, 0, 0, pw, ph, peer)
@@ -278,15 +282,29 @@ object AnomaliesBlobs {
             g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
 
             // val atScale = AffineTransform.getScaleInstance(pw, ph)
-            val atScale = AffineTransform.getScaleInstance(pw.toDouble / width, ph.toDouble / height)
+            // val atScale = AffineTransform.getScaleInstance(sx, sy)
 
-            blobUnions /* blobShapes */.zipWithIndex.foreach { case (sh, n) =>
-              val colr = Color.getHSBColor(n.toFloat / blobUnions.size, 1f, 1f)
+            val altMin = altRange.min
+            val altMax = altRange.max
+            val timMin = 0
+            val timMax = 179
+
+            val ln = new Line2D.Double
+            blobs.zipWithIndex.foreach { case (b, n) =>
+              val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
               // g.setColor(Color.green)
-              val shS = atScale.createTransformedShape(sh)
+              // val shS = atScale.createTransformedShape(sh)
               g.setColor(colr)
               g.setStroke(strkThick)
-              g.draw(shS)
+              // g.draw(shS)
+              b.slices.zipWithIndex.foreach { case (sl, sli) =>
+                import numbers.Implicits._
+                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+                val x  = ((sli + b.blobLeft) .linlin(0, timMax - timMin, 0, width - 3 ) + 1.5) * sx
+                ln.setLine(x, y1, x, y2)
+                g.draw(ln)
+              }
             }
 
             //              // Blobs
@@ -307,7 +325,7 @@ object AnomaliesBlobs {
 
     val maxOverlaps = 4 // 8 // 6 // 2
 
-    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int /* , openFrame: Boolean = false */): Array[Array[Float]] = {
+    def calcBlobs(data: Vec[Double], timeSize: Int, altSize: Int, openFrame: Boolean = false): Array[Array[Float]] = {
       val lo      = 0.0               // XXX TODO --- make user selectable
       val hi      = 3.5               // XXX TODO --- make user selectable
       val width   = timeSize + 2
@@ -389,10 +407,14 @@ object AnomaliesBlobs {
           var boxVIdx     = boxTop
           var sliceSum    = 0.0
           var sliceCenter = 0.0
+          var sliceCnt    = 0
           while (boxVIdx < boxBottom) {
             val ta = data(timeIdx * altSize + boxVIdx)
-            sliceSum    += ta
-            sliceCenter += ta * boxVIdx
+            if (ta > 1.0) {  // XXX TODO --- user customizable
+              sliceSum    += ta
+              sliceCenter += ta * boxVIdx
+              sliceCnt    += 1
+            }
             boxVIdx     += 1
           }
           import numbers.Implicits._
@@ -403,11 +425,13 @@ object AnomaliesBlobs {
           var sliceStdDev = 0.0
           while (boxVIdx < boxBottom) {
             val ta  = data(timeIdx * altSize + boxVIdx)
-            val d   = ta - sliceMean
-            sliceStdDev += d * d
+            if (ta > 1.0) {  // XXX TODO --- user customizable
+              val d = ta - sliceMean
+              sliceStdDev += d * d
+            }
             boxVIdx += 1
           }
-          if (boxHeight > 0) sliceStdDev = math.sqrt(sliceStdDev / (boxHeight - 1))
+          if (sliceCnt > 0) sliceStdDev = math.sqrt(sliceStdDev / (sliceCnt - 1))
 
           val slice = BlobSlice(
             boxTop        = boxTop,
@@ -469,10 +493,10 @@ object AnomaliesBlobs {
 //        sys.error(s"More overlapping blobs ($numOverlaps) than allocated for ($maxOverlaps)")
 //      }
 
-//      if (openFrame) Swing.onEDT {
+      if (openFrame) Swing.onEDT {
 //        val blobUnions = blobFlt.map(_.shape)
-//        mkFrame(img, title0 = "blobs", blobUnions = blobUnions)
-//      }
+        mkFrame(img, title0 = "blobs", blobs = blobFlt)
+      }
 
 //      val blobs = blobFlt.map { in =>
 //        var timeIdx   = in.blobLeft
@@ -585,8 +609,6 @@ object AnomaliesBlobs {
       
        */
 
-      val fOut = userHome / "Documents" / "temp" / "test.nc"
-
       // we would need to change altitude for the feature vector, so `inDims` would contain the
       // altitude; we also need to be able to access all time slices at once. I think the trick is
       // to include the time then in `inDims`, but "recreate" it in the `outDimsSpec`. Then the
@@ -627,10 +649,9 @@ object AnomaliesBlobs {
 
        */
 
-      val altRange  = 210 to 360 // 390
       val sel = v
 //        .in(lonName ).select(  3)
-        .in(latName ).select(13 to 22) //  17
+//        .in(latName ).select(latRange) //  17
         .in(altName ).select(altRange )
 
       val proc = NetCdfFileUtil.transformSelection(fNC, out = fOut, sel = sel, inDims = inDims, outDimsSpec = outDims) {
@@ -638,8 +659,8 @@ object AnomaliesBlobs {
           assert(arr.shape == Vector(timeDimSz, altRange.size /* altDimSz */),
             s"Shape seen: ${arr.shape.mkString("[", "][", "]")}; expected: [$timeDimSz][${altRange.size /* altDimSz */}]")
           val data      = arr.double1D
-          // val openFrame = origin == Vector(3, 17) || origin == Vector(0, 0)
-          val arrOut    = calcBlobs(data, timeSize = timeDimSz, altSize = altRange.size /* altDimSz */ /* , openFrame = openFrame */)
+          val openFrame = origin == Vector(3, 17) // || origin == Vector(0, 0)
+          val arrOut    = calcBlobs(data, timeSize = timeDimSz, altSize = altRange.size /* altDimSz */ , openFrame = openFrame)
           // XXX TODO --- here's the problem: `transformSelection` creates
           // the new variable with the same data type as the input variable.
           // This may be float or double in our case. If we write float and the
@@ -652,10 +673,11 @@ object AnomaliesBlobs {
 
       import scala.concurrent.ExecutionContext.Implicits.global
       proc.start()
+      println("_" * 33)
       proc.monitor(printResult = false)
       Await.result(proc, Duration.Inf)
       println("Done.")
-      sys.exit()
+      // sys.exit()
     }
 
     blobTest()
