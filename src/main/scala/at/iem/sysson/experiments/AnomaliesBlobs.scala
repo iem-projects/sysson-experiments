@@ -91,7 +91,8 @@ object AnomaliesBlobs {
       val height  = altSize  + (if (pad) 2 else 0)
       val img     = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
       // val g   = img.createGraphics()
-      val yOff    = height + (if (pad) -2 else -1)
+//      val yOff    = height + (if (pad) -2 else -1)
+      val yOff    = if (pad) 1 else 0
       val xOff    = if (pad) 1 else 0
       for (x <- 0 until timeSize) {
         for (y <- 0 until altSize) {
@@ -99,7 +100,8 @@ object AnomaliesBlobs {
           import numbers.Implicits._
           val v   = ta.clip(lo, hi).linlin(lo, hi, 0, 255).toInt
           val rgb = 0xFF000000 | (v << 16) | (v << 8) | v
-          img.setRGB(xOff + x, yOff - y, rgb)
+//          img.setRGB(xOff + x, yOff - y, rgb)
+          img.setRGB(xOff + x, yOff + y, rgb)
         }
       }
       img
@@ -299,8 +301,10 @@ object AnomaliesBlobs {
               // g.draw(shS)
               b.slices.zipWithIndex.foreach { case (sl, sli) =>
                 import numbers.Implicits._
-                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
-                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+//                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+//                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
+                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
                 val x  = ((sli + b.blobLeft) .linlin(0, timMax - timMin, 0, width - 3 ) + 1.5) * sx
                 ln.setLine(x, y1, x, y2)
                 g.draw(ln)
