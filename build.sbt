@@ -8,14 +8,14 @@ scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xfuture", "-Xlint")
 
-lazy val syssonVersion        = "1.10.3-SNAPSHOT"
-lazy val scalaColliderVersion = "1.21.0"
-lazy val ugensVersion         = "1.16.0"
+lazy val syssonVersion        = "1.12.0"
+lazy val scalaColliderVersion = "1.22.2"
+lazy val ugensVersion         = "1.16.3"
 lazy val fileUtilVersion      = "1.1.2"
 lazy val equalVersion         = "0.1.1"
 lazy val swingPlusVersion     = "0.2.1"
-lazy val dotVersion           = "0.3.0"
-lazy val traceVersion         = "0.1.0"
+lazy val dotVersion           = "0.4.0"
+lazy val traceVersion         = "0.2.0"
 
 libraryDependencies ++= Seq(
   "at.iem"   %% "sysson"                     % syssonVersion,         // GPL !
