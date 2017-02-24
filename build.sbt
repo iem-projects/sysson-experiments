@@ -4,18 +4,18 @@ organization := "at.iem.sysson"
 description  := "Various prototyping for SysSon"
 homepage     := Some(url("https://github.com/iem-projects/sysson-experiments"))
 licenses     := Seq("gpl" -> url("https://www.gnu.org/licenses/gpl-3.0.txt"))
-scalaVersion := "2.11.8"
+scalaVersion := "2.12.1"
 
 scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xfuture", "-Xlint")
 
-lazy val syssonVersion        = "1.12.0"
-lazy val scalaColliderVersion = "1.22.2"
-lazy val ugensVersion         = "1.16.3"
+lazy val syssonVersion        = "1.13.0-SNAPSHOT"
+lazy val scalaColliderVersion = "1.22.3"
+lazy val ugensVersion         = "1.16.4"
 lazy val fileUtilVersion      = "1.1.2"
-lazy val equalVersion         = "0.1.1"
-lazy val swingPlusVersion     = "0.2.1"
-lazy val dotVersion           = "0.4.0"
-lazy val traceVersion         = "0.2.0"
+lazy val equalVersion         = "0.1.2"
+lazy val swingPlusVersion     = "0.2.2"
+lazy val dotVersion           = "0.4.1"
+lazy val traceVersion         = "0.2.1"
 
 libraryDependencies ++= Seq(
   "at.iem"   %% "sysson"                     % syssonVersion,         // GPL !

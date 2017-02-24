@@ -2,7 +2,7 @@
  *  AnomaliesBlobs.scala
  *  (SysSon-Experiments)
  *
- *  Copyright (c) 2016 Institute of Electronic Music and Acoustics, Graz.
+ *  Copyright (c) 2016-2017 Institute of Electronic Music and Acoustics, Graz.
  *  Written by Hanns Holger Rutz.
  *
  *	This software is published under the GNU General Public License v3+
@@ -17,7 +17,7 @@ package experiments
 
 import java.awt.geom.{AffineTransform, Area, Line2D, Path2D}
 import java.awt.image.BufferedImage
-import java.awt.{BasicStroke, Color, RenderingHints, Shape}
+import java.awt.{BasicStroke, Color, RenderingHints}
 
 import at.iem.sysson.util.NetCdfFileUtil
 import blobDetection.BlobDetection
@@ -37,7 +37,7 @@ object AnomaliesBlobs {
     val fIn       = userHome / "sysson" / "nc" / "5x30-climatology_2001-05-01_2016-05-01_ta_anom2.nc"
     val fOut      = userHome / "Documents" / "temp" / "test-blobs3.nc"
     val altRange  = 210 to 360 // 390
-    val latRange  =  13 to  22
+//    val latRange  =  13 to  22
 
     val fNC       = openFile(fIn)
     val varName   = "Temperature"
