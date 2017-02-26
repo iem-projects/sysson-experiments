@@ -20,13 +20,13 @@ protected int nbGridValue;
 
 // Voxels      
 // ------------------
-protected int[] voxel;
-protected int nbVoxel;
+public int[] voxel;
+public int nbVoxel;
 
 // EdgeVertex
 // ------------------
-protected EdgeVertex[] edgeVrt;
-protected int nbEdgeVrt;  
+public EdgeVertex[] edgeVrt;
+public int nbEdgeVrt;
 
 // Lines
 // what we pass to the renderer
