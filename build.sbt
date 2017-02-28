@@ -16,6 +16,8 @@ lazy val equalVersion         = "0.1.2"
 lazy val swingPlusVersion     = "0.2.2"
 lazy val dotVersion           = "0.4.1"
 lazy val traceVersion         = "0.2.1"
+lazy val pdflitzVersion       = "1.2.2"
+lazy val orsonpdfVersion      = "1.7"
 
 libraryDependencies ++= Seq(
   "at.iem"   %% "sysson"                     % syssonVersion,         // GPL !
@@ -26,5 +28,7 @@ libraryDependencies ++= Seq(
   "de.sciss" %% "equal"                      % equalVersion,
   "de.sciss" %% "swingplus"                  % swingPlusVersion,
   "at.iem"   %% "scalacollider-dot"          % dotVersion,
-  "at.iem"   %% "scalacollider-trace"        % traceVersion
+  "at.iem"   %% "scalacollider-trace"        % traceVersion,
+  "de.sciss" %% "pdflitz"                    % pdflitzVersion,
+  "com.orsonpdf" % "orsonpdf"                % orsonpdfVersion   // try as alternative to iText PDF
 )

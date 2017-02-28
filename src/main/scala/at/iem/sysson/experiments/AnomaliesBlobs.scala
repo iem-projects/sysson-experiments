@@ -15,28 +15,34 @@
 package at.iem.sysson
 package experiments
 
-import java.awt.geom.{AffineTransform, Area, Line2D, Path2D}
+import java.awt.geom.{AffineTransform, Area, GeneralPath, Path2D, Rectangle2D}
 import java.awt.image.BufferedImage
-import java.awt.{BasicStroke, Color, RenderingHints}
+import java.awt.{BasicStroke, Color, FileDialog, Graphics, RenderingHints, Shape}
+import java.io.File
+import javax.swing.Icon
 
 import at.iem.sysson.util.NetCdfFileUtil
 import blobDetection.BlobDetection
 import de.sciss.file._
 import de.sciss.numbers
+import de.sciss.pdflitz.{Generate, SaveAction}
+import de.sciss.swingplus.ListView
 import ucar.ma2
 
 import scala.annotation.tailrec
+import scala.collection.breakOut
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.swing.{Component, Dimension, Frame, Graphics2D, Rectangle, Swing}
+import scala.swing.{Component, Dialog, Dimension, Frame, Graphics2D, Rectangle, ScrollPane, Swing}
 
 object AnomaliesBlobs {
   def main(args: Array[String]): Unit = {
     import Implicits._
 
     val fIn       = userHome / "sysson" / "nc" / "5x30-climatology_2001-05-01_2016-05-01_ta_anom2.nc"
-    val fOut      = userHome / "Documents" / "temp" / "test-blobs3.nc"
+    val fOut      = userHome / "Documents" / "temp" / "_killme.nc" // "test-blobs3.nc"
     val altRange  = 210 to 360 // 390
+    val timeRange = 20 to (116 + 36) //  8 to 104 // 0 to 179 // 390
 //    val latRange  =  13 to  22
 
     val fNC       = openFile(fIn)
@@ -260,71 +266,189 @@ object AnomaliesBlobs {
       }
     }
 
-    def mkFrame(img: BufferedImage, title0: String, blobs: Vec[Blob]): Unit = {
+    def mkFrame(img: BufferedImage, title0: String, blobs: Vec[Blob], shapes: Vec[Shape]): Unit = {
       val width   = img.getWidth
       val height  = img.getHeight
-      new Frame {
-        title = title0 // s"range $lo-$hi; nb = ${blobs.size}"
-        contents = new Component {
-          preferredSize = new Dimension(width * 6, height * 3)
+      val c: Component = new Component {
+        preferredSize = new Dimension(width * 6, height * 3)
 
-          // private[this] val strkNorm  = new BasicStroke(1f)
-          private[this] val strkThick = new BasicStroke(2f)
+        private[this] val strkNorm    = new BasicStroke(1f)
+        private[this] val strkThick   = new BasicStroke(2f)
+        private[this] val strkThick2  = new BasicStroke(4f)
 
-          override def paint(g: Graphics2D): Unit = {
-            val pw = peer.getWidth
-            val ph = peer.getHeight
-             val sx = pw.toDouble/width
-             val sy = ph.toDouble/height
-            // g.scale(peer.getWidth.toDouble/width, peer.getHeight.toDouble/height)
-            // g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
-            g.drawImage(img, 0, 0, pw, ph, peer)
-            // g.drawImage(img, 0, 0, peer)
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING  , RenderingHints.VALUE_ANTIALIAS_ON)
-            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+        override def paint(g: Graphics2D): Unit = {
+          val pw = peer.getWidth
+          val ph = peer.getHeight
+          val sx = pw.toDouble/width
+          val sy = ph.toDouble/height
+          // g.scale(peer.getWidth.toDouble/width, peer.getHeight.toDouble/height)
+          // g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+          val atImage = AffineTransform.getTranslateInstance(0, ph)
+          atImage.scale(sx, -sy)
+//          g.drawImage(img, 0, 0, pw, ph, peer)
+          g.drawImage(img, atImage, peer)
+          // g.drawImage(img, 0, 0, peer)
+          g.setRenderingHint(RenderingHints.KEY_ANTIALIASING  , RenderingHints.VALUE_ANTIALIAS_ON)
+          g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
 
-            // val atScale = AffineTransform.getScaleInstance(pw, ph)
-            // val atScale = AffineTransform.getScaleInstance(sx, sy)
+          // val atScale = AffineTransform.getScaleInstance(pw, ph)
+          // val atScale = AffineTransform.getScaleInstance(sx, sy)
 
-            val altMin = altRange.min
-            val altMax = altRange.max
-            val timMin = 0
-            val timMax = 179
+          val altMin = altRange.min
+          val altMax = altRange.max
+          val timMin = timeRange.min // 0
+          val timMax = timeRange.max // 179
 
-            val ln = new Line2D.Double
-            blobs.zipWithIndex.foreach { case (b, n) =>
-              val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
-              // g.setColor(Color.green)
-              // val shS = atScale.createTransformedShape(sh)
-              g.setColor(colr)
-              g.setStroke(strkThick)
-              // g.draw(shS)
-              b.slices.zipWithIndex.foreach { case (sl, sli) =>
-                import numbers.Implicits._
-//                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
-//                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
-                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
-                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
-                val x  = ((sli + b.blobLeft) .linlin(0, timMax - timMin, 0, width - 3 ) + 1.5) * sx
-                ln.setLine(x, y1, x, y2)
-                g.draw(ln)
+//          val ln = new Line2D.Double
+//            blobs.zipWithIndex.foreach { case (b, n) =>
+//              val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
+//              // g.setColor(Color.green)
+//              // val shS = atScale.createTransformedShape(sh)
+//              g.setColor(colr)
+//              g.setStroke(strkThick)
+//              g.draw(shS)
+//              b.slices.zipWithIndex.foreach { case (sl, sli) =>
+//                import numbers.Implicits._
+//                //                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+//                //                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, height - 3, 0) + 1.5) * sy
+//                val y1 = (sl.boxTop          .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
+//                val y2 = (sl.boxBottom       .linlin(0, altMax - altMin, 0, height - 3) + 1.5) * sy
+//                val x  = ((sli + b.blobLeft) .linlin(0, timMax - timMin, 0, width - 3 ) + 1.5) * sx
+//                ln.setLine(x, y1, x, y2)
+//                g.draw(ln)
+//              }
+//            }
+
+          val atShapes = AffineTransform.getTranslateInstance(1.5, 1.5 + (ph - 3))
+          atShapes.scale(pw - 3, -(ph - 3))
+
+          shapes.zipWithIndex.foreach { case (sh, n) =>
+            val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
+            // g.setColor(Color.green)
+            val shS = atShapes.createTransformedShape(sh)
+//            g.setStroke(strkThick2)
+            g.setColor(Color.black)
+            val shp2 = strkThick2.createStrokedShape(shS)
+//            g.draw(shS)
+            g.fill(shp2)
+//            g.setStroke(strkThick)
+            g.setColor(colr)
+            val shp3 = strkThick.createStrokedShape(shS)
+//            g.draw(shS)
+            g.fill(shp3)
+          }
+
+          blobs.zipWithIndex.foreach { case (b, n) =>
+            val colr = Color.getHSBColor(n.toFloat / blobs.size, 1f, 1f)
+            val p = new Path2D.Double
+//            println(f"blob $n")
+            var hasMoved = false
+            b.slices.zipWithIndex.foreach { case (sl, i) =>
+              import numbers.Implicits._
+              val x = (b.blobLeft + i + 1.5).linlin(0, width , 0, 1.0)
+              val y = (sl.sliceCenter + 1.0).linlin(0, height, 0, 1.0)
+//              println(f"$x%g, $y%g")
+              if (!(x.isNaN || y.isNaN)) {
+                if (!hasMoved /* i == 0 */) { p.moveTo(x, y); hasMoved = true } else p.lineTo(x, y)
               }
             }
-
-            //              // Blobs
-            //              if (false /* drawBlobs */) {
-            //                g.setColor(Color.red)
-            //                g.setStroke(strkNorm)
-            //                r.setRect(b.xMin * pw, b.yMin * ph, b.w * pw, b.h * ph)
-            //                g.draw(r)
-            //              }
-            //
-            //              n += 1
+            val shS = atShapes.createTransformedShape(p)
+//            println(shS.getBounds)
+//            g.setStroke(strkThick2)
+            g.setColor(Color.black)
+//            g.draw(shS)
+            val shp2 = strkThick2.createStrokedShape(shS)
+            g.fill(shp2)
+//            g.setStroke(strkThick)
+            g.setColor(colr)
+//            g.draw(shS)
+            val shp3 = strkThick.createStrokedShape(shS)
+            g.fill(shp3)
           }
+
+          //              // Blobs
+          //              if (false /* drawBlobs */) {
+          //                g.setColor(Color.red)
+          //                g.setStroke(strkNorm)
+          //                r.setRect(b.xMin * pw, b.yMin * ph, b.w * pw, b.h * ph)
+          //                g.draw(r)
+          //              }
+          //
+          //              n += 1
         }
+      }
+      val f = new Frame {
+        title = title0 // s"range $lo-$hi; nb = ${blobs.size}"
+        contents = c
         pack().centerOnScreen()
         open()
       }
+      val a = new SaveAction((c: Generate.Source) :: Nil) {
+        private val views = (c: Generate.Source) :: Nil
+
+        override def apply(): Unit = {
+          val viewsL = views.toList
+          val viewO: Option[Generate.Source] = viewsL match {
+            case Nil      => None
+            case v :: Nil => Some(v)
+            case _ =>
+              var w = 0
+              var h = 0
+              viewsL.foreach { view =>
+                val p   = if (usePreferredSize) view.preferredSize else view.size
+                val pw  = math.min(64, p.width  >> 3)
+                val ph  = math.min(64, p.height >> 3)
+                w       = math.max(w, pw)
+                h       = math.max(h, ph)
+              }
+              val list  = new ListView((1 to viewsL.size).map(i => s"#$i"))
+              val icons = viewsL.zipWithIndex.map({
+                case (view, idx) =>
+                  new Icon {
+                    def getIconWidth  = w
+                    def getIconHeight = h
+
+                    def paintIcon(c: java.awt.Component, g: Graphics, x: Int, y: Int): Unit = {
+                      val g2        = g.asInstanceOf[Graphics2D]
+                      val atOrig    = g2.getTransform
+                      val clipOrig  = g2.getClip
+                      g2.clipRect(x, y, w, h)
+                      g2.translate(x, y)
+                      g2.scale(0.125, 0.125)
+                      prepare(view)
+                      view.render(g2)
+                      g2.setTransform(atOrig)
+                      g2.setClip(clipOrig)
+                    }
+                  }
+              })(breakOut)
+              val lr = new ListView.LabelRenderer[String] {
+                def configure(list: ListView[_], isSelected: Boolean, focused: Boolean, a: String, index: Int): Unit =
+                  component.icon = icons(index)
+              }
+              list.renderer = lr
+              list.selectIndices(0)
+              list.selection.intervalMode = ListView.IntervalMode.Single
+              val scroll  = new ScrollPane(list)
+              val res     = Dialog.showConfirmation(message = scroll.peer, title = title, optionType = Dialog.Options.OkCancel,
+                messageType = Dialog.Message.Plain)
+              val selIdx  = list.selection.leadIndex
+              if (res == Dialog.Result.Ok && selIdx >= 0) Some(viewsL(selIdx)) else None
+          }
+          viewO foreach { view =>
+            val fDlg  = new FileDialog(null: java.awt.Frame, title, FileDialog.SAVE)
+            fDlg.setVisible(true)
+            val file  = fDlg.getFile
+            val dir   = fDlg.getDirectory
+            if (file == null) return
+            val fileExt = if (file.endsWith(".pdf")) file else file + ".pdf"
+            prepare(view)
+            orsonApply(new File(dir, fileExt), view, usePreferredSize = usePreferredSize, margin = margin, overwrite = true)
+          }
+      }
+    }
+      //      a.margin = 32
+      a.setupMenu(f)
     }
 
     val maxOverlaps = 4 // 8 // 6 // 2
@@ -345,8 +469,8 @@ object AnomaliesBlobs {
       val minHeight = 10.0 / height   // XXX TODO --- make user selectable
       val blobs     = Vector.tabulate(bd.getBlobNb)(bd.getBlob).filter(b => b.w >= minWidth && b.h >= minHeight)
 
-      val blobShapes  = blobs.map { b =>
-        val p = new Path2D.Double
+      val blobShapes: Vec[Shape] = blobs.map { b =>
+        val p = new GeneralPath // Path2D.Double
         var m = 0
         while (m < b.getEdgeNb) {
           val eA = b.getEdgeVertexA(m)
@@ -422,7 +546,7 @@ object AnomaliesBlobs {
             boxVIdx     += 1
           }
           import numbers.Implicits._
-          val sliceMean = sliceSum / boxHeight
+          val sliceMean = sliceSum / sliceCnt // boxHeight
           sliceCenter   = (sliceCenter / sliceSum).clip(boxTop, boxBottom - 1)
 
           boxVIdx   = boxTop
@@ -499,7 +623,7 @@ object AnomaliesBlobs {
 
       if (openFrame) Swing.onEDT {
 //        val blobUnions = blobFlt.map(_.shape)
-        mkFrame(img, title0 = "blobs", blobs = blobFlt)
+        mkFrame(img, title0 = "blobs", blobs = blobFlt, shapes = blobShapes)
       }
 
 //      val blobs = blobFlt.map { in =>
@@ -626,7 +750,8 @@ object AnomaliesBlobs {
       // println(s"totalNumField =  ${Blob.totalNumField}")
       val blobDimValues = ma2.Array.factory((0 until blobDimSz).toArray)
       val varTime       = fNC.variableMap(timeName)
-      val timeDimValues = varTime.read()
+      val varTime1      = varTime.in(timeName).select(timeRange)
+      val timeDimValues = varTime1.read()
       val timeDimSz     = timeDimValues.size.toInt
       // val varAlt        = fNC.variableMap(altName)
       // val altDimValues  = varAlt.read()
@@ -654,9 +779,10 @@ object AnomaliesBlobs {
        */
 
       val sel = v
-//        .in(lonName ).select(  3)
-//        .in(latName ).select(latRange) //  17
-        .in(altName ).select(altRange )
+        .in(timeName).select(timeRange)
+        .in(lonName ).select(3)
+        .in(latName ).select(17)
+        .in(altName ).select(altRange)
 
       val proc = NetCdfFileUtil.transformSelection(fNC, out = fOut, sel = sel, inDims = inDims, outDimsSpec = outDims) {
         case (origin, arr) =>
@@ -685,5 +811,20 @@ object AnomaliesBlobs {
     }
 
     blobTest()
+  }
+
+  def orsonApply(file: File, view: Generate.Source, usePreferredSize: Boolean = false, margin: Int = 0,
+            overwrite: Boolean = false): Unit = {
+    require(!file.exists() || overwrite, s"The specified file $file already exists.")
+
+    val viewSz = if (usePreferredSize) view.preferredSize else view.size
+    val w      = viewSz.width  + (margin << 1)
+    val h      = viewSz.height + (margin << 1)
+    val doc    = new com.orsonpdf.PDFDocument
+    val rect   = new Rectangle(w, h)
+    val page   = doc.createPage(rect)
+    val g2     = page.getGraphics2D
+    view.render(g2)
+    doc.writeToFile(file)
   }
 }
