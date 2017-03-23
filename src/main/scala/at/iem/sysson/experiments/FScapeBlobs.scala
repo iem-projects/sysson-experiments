@@ -51,17 +51,17 @@ object FScapeBlobs {
     }
 
     import scala.concurrent.ExecutionContext.Implicits.global
-    fut.foreach { shapes =>
+    fut.foreach { case (shapes, img) =>
       println(s"Shapes: ${shapes.size}")
 //      sys.exit()
       defer {
         val height  = AnomaliesBlobs.altRange .size
         val width   = AnomaliesBlobs.timeRange.size
-        val img     = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-        val g       = img.createGraphics()
-        g.setColor(Color.black)
-        g.fillRect(0, 0, width, height)
-        g.dispose()
+//        val img     = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+//        val g       = img.createGraphics()
+//        g.setColor(Color.black)
+//        g.fillRect(0, 0, width, height)
+//        g.dispose()
 //        shapes.map(_.getBounds.getSize).foreach(dim => println(s"w = ${dim.width}, h = ${dim.height}"))
         val atScale = AffineTransform.getScaleInstance(1.0 / width, 1.0 / height)
 //        atScale.rotate(math.Pi * 0.5, 0.5 * h, 0.5 * w)
@@ -91,7 +91,9 @@ object FScapeBlobs {
       Reduce(vr, Dimension.Selection.Name(dimName), Reduce.Op.Slice(range.head, range.last))
   }
 
-  def mkSonif()(implicit tx: S#Tx, resolver: DataSource.Resolver[S]): (FScape[S], Future[Vec[Shape]]) = {
+  type Result = (Vec[Shape], BufferedImage)
+
+  def mkSonif()(implicit tx: S#Tx, resolver: DataSource.Resolver[S]): (FScape[S], Future[Result]) = {
     import AnomaliesBlobs._
 //    val son           = Sonification[S]
     val (graph, fut)  = mkGraph()
@@ -122,14 +124,15 @@ object FScapeBlobs {
     (fsc, fut)
   }
 
-  def mkGraph(): (Graph, Future[Vec[Shape]]) = {
+  def mkGraph(): (Graph, Future[Result]) = {
     var arrNumVertices: Array[Double] = null
     var arrVertices   : Array[Double] = null
+    var arrImage      : Array[Double] = null
 
-    val p = Promise[Vec[Shape]]()
+    val p = Promise[Result]()
 
     def checkResult(): Unit = {
-      if (arrNumVertices != null && arrVertices != null) {
+      if (arrNumVertices != null && arrVertices != null && arrImage != null) {
         val all   = arrVertices.grouped(2).map { arr => (arr(0), arr(1)) }
         val blobs = arrNumVertices.iterator.map { d =>
           val sz  = d.toInt
@@ -145,7 +148,20 @@ object FScapeBlobs {
           gp: Shape
         } .toVector
 
-        p.trySuccess(blobs)
+        val width  = AnomaliesBlobs.timeRange.size
+        val height = AnomaliesBlobs.altRange .size
+        assert(arrImage.length == width * height)
+        val img = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
+        for (x <- 0 until width) {
+          for (y <- 0 until height) {
+            val value     = arrImage(x * height + y)  // rotate at the same time
+            val value255  = (math.max(0, math.min(1, value)) * 255).toInt
+            val rgb       = (value255 << 16) | (value255 << 8) | value255
+            img.setRGB(x, y, rgb)
+          }
+        }
+
+        p.trySuccess((blobs, img))
       }
     }
 
@@ -195,9 +211,13 @@ object FScapeBlobs {
 
       // frames.poll(Metro(winSzOut).tail, "advance")
       RunningSum(numBlobs).last.poll(0, "total-blobs")
+      width.poll(0, "width")
+      height.poll(0, "height")
+      Length(win).poll(0, "image-size")
 
       Collect(blobs.numVertices) { arr => arrNumVertices = arr; checkResult() }
       Collect(blobs.vertices   ) { arr => arrVertices    = arr; checkResult() }
+      Collect(win              ) { arr => arrImage       = arr; checkResult() }
     }
 
     (g, p.future)
