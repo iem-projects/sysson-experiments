@@ -1,6 +1,6 @@
 package at.iem.sysson.experiments
 
-import java.awt.{Color, Shape}
+import java.awt.Shape
 import java.awt.geom.{AffineTransform, GeneralPath}
 import java.awt.image.BufferedImage
 
@@ -64,9 +64,10 @@ object FScapeBlobs {
 //        g.dispose()
 //        shapes.map(_.getBounds.getSize).foreach(dim => println(s"w = ${dim.width}, h = ${dim.height}"))
         val atScale = AffineTransform.getScaleInstance(1.0 / width, 1.0 / height)
+        atScale.translate(0.5, 0.5)
 //        atScale.rotate(math.Pi * 0.5, 0.5 * h, 0.5 * w)
-        val minWidth  =  3.0 // XXX TODO --- make user selectable
-        val minHeight = 10.0 // XXX TODO --- make user selectable
+        val minWidth  =  4.0 // XXX TODO --- make user selectable
+        val minHeight = 16.0 // XXX TODO --- make user selectable
         val shapesSm = shapes.flatMap { sh =>
           val b = sh.getBounds
           if (b.width >= minWidth && b.height >= minHeight) {
@@ -151,13 +152,13 @@ object FScapeBlobs {
         val width  = AnomaliesBlobs.timeRange.size
         val height = AnomaliesBlobs.altRange .size
         assert(arrImage.length == width * height)
-        val img = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY)
+        val img = new BufferedImage(width + 2, height + 2, BufferedImage.TYPE_BYTE_GRAY)
         for (x <- 0 until width) {
           for (y <- 0 until height) {
             val value     = arrImage(x * height + y)  // rotate at the same time
             val value255  = (math.max(0, math.min(1, value)) * 255).toInt
             val rgb       = (value255 << 16) | (value255 << 8) | value255
-            img.setRGB(x, y, rgb)
+            img.setRGB(x + 1, y + 1, rgb)
           }
         }
 

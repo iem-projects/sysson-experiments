@@ -8,7 +8,7 @@ package blobDetection;
 public class Metaballs2D
 {
 // Isovalue
-// ------------------
+// ------------------f
 protected float isovalue;
 
 // Grid
