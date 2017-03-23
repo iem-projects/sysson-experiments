@@ -36,6 +36,19 @@ import scala.concurrent.duration.Duration
 import scala.swing.{Component, Dialog, Dimension, Frame, Graphics2D, Rectangle, ScrollPane, Swing}
 
 object AnomaliesBlobs {
+  val fIn      : File   = userHome / "sysson" / "nc" / "5x30-climatology_2001-05-01_2016-05-01_ta_anom2.nc"
+  val altRange : Range  = 210 to 360 // 390
+  val timeRange: Range  =  20 to (116 + 36) //  8 to 104 // 0 to 179 // 390
+  val latRange : Range  =  17 to  17 // 13 to  22
+  val lonRange : Range  =   3 to   3
+  val varName  : String = "Temperature"
+  val lonName  : String = "Longitude"
+  val latName  : String = "Latitude"
+  val timeName : String = "Time"
+  val altName  : String = "Altitude"
+
+  def main(args: Array[String]): Unit = run()
+
   trait BlobLike {
     def blobLeft    : Int
     def blobTop     : Int
@@ -354,7 +367,7 @@ object AnomaliesBlobs {
 
     val blobShapes: Vec[Shape] = blobs.map { b =>
       val p = new GeneralPath // Path2D.Double
-    var m = 0
+      var m = 0
       while (m < b.getEdgeNb) {
         val eA = b.getEdgeVertexA(m)
         val eB = b.getEdgeVertexB(m)
@@ -546,26 +559,17 @@ object AnomaliesBlobs {
     res
   }
 
-  def main(args: Array[String]): Unit = {
+  def run(): Unit = {
     import Implicits._
 
-    val fIn       = userHome / "sysson" / "nc" / "5x30-climatology_2001-05-01_2016-05-01_ta_anom2.nc"
-    val fOut      = {
+    val fOut = {
       val d0  = userHome / "Documents" / "temp"
       val d1  = file("/") / "data" / "temp"
       val dir = if (d0.isDirectory) d0 else if (d1.isDirectory) d1 else throw new IllegalStateException()
       dir / "_killme.nc"
     } // "test-blobs3.nc"
-    val altRange  = 210 to 360 // 390
-    val timeRange = 20 to (116 + 36) //  8 to 104 // 0 to 179 // 390
-//    val latRange  =  13 to  22
 
     val fNC       = openFile(fIn)
-    val varName   = "Temperature"
-    val lonName   = "Longitude"
-    val latName   = "Latitude"
-    val timeName  = "Time"
-    val altName   = "Altitude"
     val v         = fNC.variableMap(varName)
 
     val maxOverlaps = 4 // 8 // 6 // 2
@@ -632,8 +636,8 @@ object AnomaliesBlobs {
 
       val sel = v
         .in(timeName).select(timeRange)
-        .in(lonName ).select(3)
-        .in(latName ).select(17)
+        .in(lonName ).select(lonRange)
+        .in(latName ).select(latRange)
         .in(altName ).select(altRange)
 
       val proc = NetCdfFileUtil.transformSelection(fNC, out = fOut, sel = sel, inDims = inDims, outDimsSpec = outDims) {
