@@ -114,7 +114,7 @@ object Voices2 {
     import Ops._
     import ugen._
 //    import trace.ugen._
-    implicit val exec = s.clientConfig.executionContext
+//    implicit val exec = s.clientConfig.executionContext
 
 //    import TraceOps._
 

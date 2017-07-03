@@ -17,8 +17,6 @@ package ugen
 
 import de.sciss.synth
 
-import scala.language.implicitConversions
-
 /*
 
   variant 1 (future Scala)

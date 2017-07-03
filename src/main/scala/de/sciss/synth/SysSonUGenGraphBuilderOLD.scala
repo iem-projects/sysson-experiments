@@ -17,7 +17,7 @@ package de.sciss.synth
 import de.sciss.synth.Ops.stringToControl
 import de.sciss.synth.impl.BasicUGenGraphBuilder
 import de.sciss.synth.ugen.impl.modular.{IfCase, IfGEImpl}
-import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, If, Impulse, In, Out, UnaryOpUGen}
+import de.sciss.synth.ugen.{BinaryOpUGen, Constant, ControlProxyLike, Delay1, Impulse, In, Out, UnaryOpUGen}
 
 import scala.annotation.elidable
 import scala.collection.immutable.{IndexedSeq => Vec, Set => ISet}
@@ -122,8 +122,8 @@ object SysSonUGenGraphBuilderOLD {
 
     // ---- impl ----
 
-    protected final var _children = List.empty[Result]
-    protected final var _links    = List.empty[Link]
+    protected final var _children : List[Result]  = Nil
+    protected final var _links    : List[Link]    = Nil
 
     private[this] var sources         = Vec.empty[Lazy]    // g0.sources
     private[this] var controlProxies  = ISet.empty[ControlProxyLike]  // g0.controlProxies
@@ -404,7 +404,7 @@ object SysSonUGenGraphBuilderOLD {
 
     def outer: OuterImpl = parent.outer
 
-    override def toString = name
+    override def toString: String = name
 
     override def visit[U](ref: AnyRef, init: => U): U = visit1[U](ref, () => init)
 
@@ -434,10 +434,10 @@ object SysSonUGenGraphBuilderOLD {
     def outer: OuterImpl  = this
     def parent: Impl      = this
 
-    def childId           = -1
-    def selectedBranchId  = -1
-    def branchIdx         = -1
-    def hasLag            = false
+    def childId         : Int     = -1
+    def selectedBranchId: Int     = -1
+    def branchIdx       : Int     = -1
+    def hasLag          : Boolean = false
 
     //    override def toString = s"UGenGraph.Builder@${hashCode.toHexString}"
     override def toString = "outer"

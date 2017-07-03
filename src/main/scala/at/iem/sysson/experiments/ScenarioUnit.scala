@@ -15,7 +15,6 @@
 package at.iem.sysson.experiments
 
 import de.sciss.synth
-import de.sciss.synth.ugen.If
 import de.sciss.synth.{GE, NestedUGenGraphBuilder, Server, SynthGraph, ugen}
 
 object ScenarioUnit extends App {
